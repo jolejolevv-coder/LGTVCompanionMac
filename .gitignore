@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Unrelated separate project — kept local only
+onepiece-tcg-table/
+
+# Local Claude Code settings
+.claude/
