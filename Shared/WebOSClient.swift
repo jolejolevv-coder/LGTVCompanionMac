@@ -159,22 +159,19 @@ public class WebOSClient: ObservableObject {
     }
 
     private func connect(secure: Bool) async throws {
-        let portNumber: UInt16 = secure ? 3001 : 3000
+        let port: UInt16 = secure ? 3001 : 3000
+        let scheme = secure ? "wss" : "ws"
+        guard let url = URL(string: "\(scheme)://\(device.ipAddress):\(port)") else {
+            throw WebOSError.networkError(NSError(domain: "InvalidURL", code: -1))
+        }
 
         let parameters: NWParameters
         if secure {
             // LG TVs use a self-signed certificate — accept it.
-            // NWParameters(tls:) + NWConnection(host:port:using:) is used instead of
-            // NWConnection(to: .url("wss://..."), using:) because combining a wss:// URL
-            // with explicit TLS parameters causes a conflict in Network.framework that
-            // prevents the TLS handshake from completing.
             let tlsOptions = NWProtocolTLS.Options()
-            // Cap at TLS 1.2. LG webOS TVs (2018-era self-signed cert) do not
-            // complete a TLS 1.3 handshake on port 3001 — the connection hangs
-            // and every request times out. Network.framework otherwise
-            // negotiates 1.3 by default. Verified against the TV: TLS 1.3 0/4
-            // handshakes succeed, TLS 1.2 4/4. A low minimum keeps older
-            // firmware working too.
+            // Cap at TLS 1.2. LG webOS TVs (2018-era self-signed cert) are
+            // flaky completing a TLS 1.3 handshake on port 3001; TLS 1.2 is
+            // reliable. A low minimum keeps older firmware working too.
             sec_protocol_options_set_min_tls_protocol_version(
                 tlsOptions.securityProtocolOptions, .TLSv10)
             sec_protocol_options_set_max_tls_protocol_version(
@@ -192,14 +189,12 @@ public class WebOSClient: ObservableObject {
         wsOptions.autoReplyPing = true
         parameters.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)
 
-        guard let nwPort = NWEndpoint.Port(rawValue: portNumber) else {
-            throw WebOSError.networkError(NSError(domain: "InvalidPort", code: -1))
-        }
-        let newConnection = NWConnection(
-            host: NWEndpoint.Host(device.ipAddress),
-            port: nwPort,
-            using: parameters
-        )
+        // Use the URL endpoint, NOT NWConnection(host:port:). With host:port
+        // Network.framework's WebSocket upgrade omits a proper Host header/path
+        // and the TV silently ignores it — the connection hangs in "preparing"
+        // and every request times out. The URL form sends a correct upgrade.
+        // Verified against the TV: URL form 4/4 connect, host:port 0/3.
+        let newConnection = NWConnection(to: .url(url), using: parameters)
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             // Guard against double resume (.ready followed by .failed, etc.)
