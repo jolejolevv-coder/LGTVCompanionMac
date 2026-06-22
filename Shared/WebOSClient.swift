@@ -116,6 +116,11 @@ public class WebOSClient: ObservableObject {
     private let queue = DispatchQueue(label: "com.lgtvcompanion.webosclient")
 
     private static let requestTimeout: TimeInterval = 10
+    /// Connecting is slower than a normal request: some webOS TVs take well
+    /// over 10s to complete the TLS/WebSocket handshake on a cold socket, so
+    /// the connect timeout is more generous than requestTimeout.
+    private static let connectTimeout: TimeInterval = 20
+    private static let connectRetries = 2 // total secure attempts before falling back
     private static let pairingTimeout: TimeInterval = 60 // user must accept prompt on TV
 
     public init(device: WebOSDevice) {
@@ -130,11 +135,26 @@ public class WebOSClient: ObservableObject {
 
     /// Connects via secure WebSocket (wss://:3001) first — required on newer
     /// webOS firmware — and falls back to plain ws://:3000 for older TVs.
+    ///
+    /// The secure handshake is retried a few times before the fallback: the
+    /// TV's WSS service is flaky on a cold socket and a single attempt often
+    /// times out even though the next one connects within a second.
     public func connect() async throws {
+        var lastError: Error?
+        for _ in 0..<Self.connectRetries {
+            do {
+                try await connect(secure: true)
+                return
+            } catch {
+                lastError = error
+            }
+        }
         do {
-            try await connect(secure: true)
-        } catch {
             try await connect(secure: false)
+        } catch {
+            // Surface the secure error: on modern firmware the plain port is
+            // disabled, so the secure failure is the meaningful one.
+            throw lastError ?? error
         }
     }
 
@@ -206,8 +226,9 @@ public class WebOSClient: ObservableObject {
                 }
             }
 
-            // Connection-level timeout
-            queue.asyncAfter(deadline: .now() + Self.requestTimeout) {
+            // Connection-level timeout (longer than a request: cold WSS
+            // handshakes on some TVs take >10s).
+            queue.asyncAfter(deadline: .now() + Self.connectTimeout) {
                 if resumed.tryClaim() {
                     newConnection.cancel()
                     continuation.resume(throwing: WebOSError.timeout)
