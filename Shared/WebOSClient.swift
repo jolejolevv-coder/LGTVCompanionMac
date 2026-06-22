@@ -169,6 +169,16 @@ public class WebOSClient: ObservableObject {
             // with explicit TLS parameters causes a conflict in Network.framework that
             // prevents the TLS handshake from completing.
             let tlsOptions = NWProtocolTLS.Options()
+            // Cap at TLS 1.2. LG webOS TVs (2018-era self-signed cert) do not
+            // complete a TLS 1.3 handshake on port 3001 — the connection hangs
+            // and every request times out. Network.framework otherwise
+            // negotiates 1.3 by default. Verified against the TV: TLS 1.3 0/4
+            // handshakes succeed, TLS 1.2 4/4. A low minimum keeps older
+            // firmware working too.
+            sec_protocol_options_set_min_tls_protocol_version(
+                tlsOptions.securityProtocolOptions, .TLSv10)
+            sec_protocol_options_set_max_tls_protocol_version(
+                tlsOptions.securityProtocolOptions, .TLSv12)
             sec_protocol_options_set_verify_block(
                 tlsOptions.securityProtocolOptions,
                 { _, _, complete in complete(true) },
