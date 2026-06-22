@@ -135,15 +135,15 @@ public class WebOSClient: ObservableObject {
     }
 
     private func connect(secure: Bool) async throws {
-        let port: UInt16 = secure ? 3001 : 3000
-        let scheme = secure ? "wss" : "ws"
-        guard let url = URL(string: "\(scheme)://\(device.ipAddress):\(port)") else {
-            throw WebOSError.networkError(NSError(domain: "InvalidURL", code: -1))
-        }
+        let portNumber: UInt16 = secure ? 3001 : 3000
 
         let parameters: NWParameters
         if secure {
             // LG TVs use a self-signed certificate — accept it.
+            // NWParameters(tls:) + NWConnection(host:port:using:) is used instead of
+            // NWConnection(to: .url("wss://..."), using:) because combining a wss:// URL
+            // with explicit TLS parameters causes a conflict in Network.framework that
+            // prevents the TLS handshake from completing.
             let tlsOptions = NWProtocolTLS.Options()
             sec_protocol_options_set_verify_block(
                 tlsOptions.securityProtocolOptions,
@@ -158,7 +158,14 @@ public class WebOSClient: ObservableObject {
         wsOptions.autoReplyPing = true
         parameters.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)
 
-        let newConnection = NWConnection(to: .url(url), using: parameters)
+        guard let nwPort = NWEndpoint.Port(rawValue: portNumber) else {
+            throw WebOSError.networkError(NSError(domain: "InvalidPort", code: -1))
+        }
+        let newConnection = NWConnection(
+            host: NWEndpoint.Host(device.ipAddress),
+            port: nwPort,
+            using: parameters
+        )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             // Guard against double resume (.ready followed by .failed, etc.)
