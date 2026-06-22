@@ -57,9 +57,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // App icon (Dock) — from the SPM resource bundle. In the packaged
-        // .app this also comes from Info.plist/CFBundleIconFile.
-        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+        // App icon (Dock) — in a packaged .app, CFBundleIconFile in Info.plist handles
+        // the icon automatically; this call is a belt-and-suspenders fallback and also
+        // covers the `swift run` case. Bundle.main finds AppIcon.icns in Contents/Resources/;
+        // Bundle.module would crash with fatalError() if its SPM bundle is missing.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let icon = NSImage(contentsOf: url) {
             NSApp.applicationIconImage = icon
         }

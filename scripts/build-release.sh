@@ -23,9 +23,9 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 
-# App icon + SPM resource bundle. Bundle.module also checks
-# Bundle.main.resourceURL (Contents/Resources) — placing it there keeps
-# codesign happy (bundles inside Contents/MacOS break signing).
+# App icon — copied directly so Bundle.main can find it in Contents/Resources/.
+# The app no longer uses Bundle.module for icon lookup, so the SPM resource bundle
+# is not required at runtime; we skip it silently if absent.
 cp App/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 if [ -d ".build/release/LGTVCompanion_LGTVCompanionApp.bundle" ]; then
     cp -R ".build/release/LGTVCompanion_LGTVCompanionApp.bundle" "$APP/Contents/Resources/"
