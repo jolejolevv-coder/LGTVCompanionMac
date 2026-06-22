@@ -143,17 +143,60 @@ public class WakeOnLAN {
         }.value
     }
     
-    /// Calculate subnet broadcast address from IP
+    /// Calculate the subnet-directed broadcast address for the target IP.
+    ///
+    /// The subnet mask is read from the local interface that shares a subnet
+    /// with the target (via getifaddrs) and the broadcast is computed as
+    /// (ip & mask) | ~mask. The old code hardcoded /24 ("a.b.c.255"), which is
+    /// wrong on /16, /23, /22, … networks and silently sent the packet to a
+    /// non-broadcast address. Falls back to the limited broadcast when the
+    /// mask can't be determined.
     private static func getSubnetBroadcast(for ipAddress: String) throws -> String {
-        // For simplicity, assume /24 subnet (most common)
-        let components = ipAddress.split(separator: ".")
-        guard components.count == 4 else {
+        guard let target = ipv4NetworkOrder(ipAddress) else {
             throw NSError(domain: "Invalid IP address", code: -1)
         }
-        
-        return "\(components[0]).\(components[1]).\(components[2]).255"
+
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0 else { return "255.255.255.255" }
+        defer { freeifaddrs(ifaddrPtr) }
+
+        var ptr = ifaddrPtr
+        while let cur = ptr {
+            defer { ptr = cur.pointee.ifa_next }
+            guard let addr = cur.pointee.ifa_addr,
+                  addr.pointee.sa_family == sa_family_t(AF_INET),
+                  let netmask = cur.pointee.ifa_netmask else { continue }
+
+            let ifAddr = sinAddr(addr)
+            let mask = sinAddr(netmask)
+            // Interface on the same subnet as the target?
+            if (ifAddr & mask) == (target & mask) {
+                let broadcast = (target & mask) | ~mask
+                return stringFromNetworkOrder(broadcast)
+            }
+        }
+        return "255.255.255.255"
     }
-    
+
+    /// Parse a dotted-quad into an in_addr_t (network byte order), or nil.
+    private static func ipv4NetworkOrder(_ s: String) -> in_addr_t? {
+        var a = in_addr()
+        return s.withCString { inet_pton(AF_INET, $0, &a) == 1 ? a.s_addr : nil }
+    }
+
+    /// Read the 32-bit address (network byte order) out of a sockaddr known to
+    /// be AF_INET.
+    private static func sinAddr(_ sa: UnsafeMutablePointer<sockaddr>) -> in_addr_t {
+        sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr.s_addr }
+    }
+
+    private static func stringFromNetworkOrder(_ addr: in_addr_t) -> String {
+        var a = in_addr(s_addr: addr)
+        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        inet_ntop(AF_INET, &a, &buf, socklen_t(INET_ADDRSTRLEN))
+        return String(cString: buf)
+    }
+
     /// Validate MAC address format
     public static func isValidMacAddress(_ mac: String) -> Bool {
         let pattern = "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
@@ -161,17 +204,12 @@ public class WakeOnLAN {
         let range = NSRange(mac.startIndex..., in: mac)
         return regex?.firstMatch(in: mac, range: range) != nil
     }
-    
-    /// Validate IP address format
+
+    /// Validate IP address format. Uses inet_pton so malformed inputs the old
+    /// split()-based check let through — trailing/leading dots ("192.168.1.1."),
+    /// signed octets ("1.2.3.+4") — are correctly rejected.
     public static func isValidIPAddress(_ ip: String) -> Bool {
-        let components = ip.split(separator: ".")
-        guard components.count == 4 else { return false }
-        
-        return components.allSatisfy { component in
-            guard let num = Int(component), num >= 0, num <= 255 else {
-                return false
-            }
-            return true
-        }
+        var addr = in_addr()
+        return ip.withCString { inet_pton(AF_INET, $0, &addr) == 1 }
     }
 }

@@ -37,6 +37,11 @@ public class DeviceDiscovery: ObservableObject {
 
     private var group: NWConnectionGroup?
     private var scanTimer: Timer?
+    /// Incremented on every startScan(). Async description fetches capture the
+    /// value at launch and drop their result if a newer scan has begun (or the
+    /// scan ended) — otherwise a slow fetch appends a "ghost" device into a
+    /// later, freshly-cleared result list.
+    private var scanGeneration = 0
 
     /// Search targets: dedicated webOS second-screen service, plus generic
     /// rootdevice as fallback for TVs that don't answer the specific ST.
@@ -50,6 +55,7 @@ public class DeviceDiscovery: ObservableObject {
         guard !isScanning else { return }
 
         isScanning = true
+        scanGeneration += 1
         discoveredDevices.removeAll()
 
         // FIX: the previous implementation sent the M-SEARCH on one
@@ -136,6 +142,8 @@ public class DeviceDiscovery: ObservableObject {
 
     /// Parse SSDP response and extract device information
     private func parseSSDPResponse(_ data: Data, from endpoint: NWEndpoint?) {
+        // Tag any device produced from this response with the current scan.
+        let generation = scanGeneration
         guard let response = String(data: data, encoding: .utf8) else { return }
 
         // Only handle search responses / announcements from LG WebOS devices
@@ -165,7 +173,7 @@ public class DeviceDiscovery: ObservableObject {
             if ipAddress.isEmpty, let host = url.host {
                 ipAddress = host
             }
-            fetchDeviceDescription(from: url, ipAddress: ipAddress)
+            fetchDeviceDescription(from: url, ipAddress: ipAddress, generation: generation)
         } else if !ipAddress.isEmpty {
             // Add device with limited info
             DispatchQueue.main.async {
@@ -174,13 +182,13 @@ public class DeviceDiscovery: ObservableObject {
                     friendlyName: "",
                     modelName: "LG WebOS TV",
                     macAddress: nil
-                ))
+                ), generation: generation)
             }
         }
     }
 
     /// Fetch and parse device description XML
-    private func fetchDeviceDescription(from url: URL, ipAddress: String) {
+    private func fetchDeviceDescription(from url: URL, ipAddress: String, generation: Int) {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
 
@@ -195,7 +203,7 @@ public class DeviceDiscovery: ObservableObject {
                         friendlyName: "",
                         modelName: "LG WebOS TV",
                         macAddress: nil
-                    ))
+                    ), generation: generation)
                 }
                 return
             }
@@ -209,23 +217,59 @@ public class DeviceDiscovery: ObservableObject {
                     friendlyName: parser.friendlyName,
                     modelName: parser.modelName,
                     macAddress: nil // MAC address typically not in SSDP
-                ))
+                ), generation: generation)
             }
         }.resume()
     }
 
-    /// Add device to list if not already present (must run on main)
-    private func addDeviceIfNew(_ device: DiscoveredDevice) {
+    /// Add device to list if not already present (must run on main). Drops
+    /// results from a finished or superseded scan via the generation token.
+    private func addDeviceIfNew(_ device: DiscoveredDevice, generation: Int) {
+        guard isScanning, generation == scanGeneration else { return }
         guard !device.ipAddress.isEmpty else { return }
-        if !discoveredDevices.contains(where: { $0.ipAddress == device.ipAddress }) {
+
+        guard let index = discoveredDevices.firstIndex(where: {
+            $0.ipAddress == device.ipAddress
+        }) else {
             discoveredDevices.append(device)
-        } else if !device.friendlyName.isEmpty,
-                  let index = discoveredDevices.firstIndex(where: {
-                      $0.ipAddress == device.ipAddress && $0.friendlyName.isEmpty
-                  }) {
-            // Upgrade an entry that previously had no name
-            discoveredDevices[index] = device
+            return
         }
+
+        // Already known — upgrade per field whenever the new response carries
+        // more information than the stored entry. The old code only upgraded on
+        // a non-empty friendlyName, so a later fetch with a real modelName but
+        // empty friendlyName was dropped, leaving the generic "LG WebOS TV".
+        let existing = discoveredDevices[index]
+        let placeholderModels: Set<String> = ["", "LG WebOS TV"]
+        var merged = existing
+        if existing.friendlyName.isEmpty && !device.friendlyName.isEmpty {
+            merged = DiscoveredDevice(
+                ipAddress: existing.ipAddress,
+                friendlyName: device.friendlyName,
+                modelName: merged.modelName,
+                macAddress: existing.macAddress ?? device.macAddress
+            )
+        }
+        if placeholderModels.contains(existing.modelName) && !placeholderModels.contains(device.modelName) {
+            merged = DiscoveredDevice(
+                ipAddress: merged.ipAddress,
+                friendlyName: merged.friendlyName,
+                modelName: device.modelName,
+                macAddress: merged.macAddress ?? device.macAddress
+            )
+        }
+        if merged != existing {
+            discoveredDevices[index] = merged
+        }
+    }
+}
+
+extension DiscoveredDevice: Equatable {
+    public static func == (lhs: DiscoveredDevice, rhs: DiscoveredDevice) -> Bool {
+        lhs.ipAddress == rhs.ipAddress
+            && lhs.friendlyName == rhs.friendlyName
+            && lhs.modelName == rhs.modelName
+            && lhs.macAddress == rhs.macAddress
     }
 }
 

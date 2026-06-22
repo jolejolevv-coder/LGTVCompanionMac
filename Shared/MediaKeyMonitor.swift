@@ -17,7 +17,10 @@ public enum MediaKeyEvent {
 }
 
 public final class MediaKeyMonitor {
-    public var onMediaKey: ((MediaKeyEvent) -> Void)?
+    /// Returns whether the key was actually routed to a TV. When it returns
+    /// false (e.g. no enabled device), the key is NOT swallowed so the Mac's
+    /// own volume control keeps working.
+    public var onMediaKey: ((MediaKeyEvent) -> Bool)?
 
     /// True when the CGEventTap is active (events are swallowed, the Mac's
     /// own volume OSD does not appear). False = passive fallback.
@@ -138,18 +141,25 @@ public final class MediaKeyMonitor {
         let keyFlags = data1 & 0x0000FFFF
         let isKeyDown = ((keyFlags & 0xFF00) >> 8) == 0x0A
 
+        // Track per-key whether the matching key-down was routed to a TV, so
+        // the paired key-up is swallowed iff its key-down was — keeping the
+        // key event consistent for the system when we don't handle it.
         switch keyCode {
         case Self.keySoundUp:
-            if isKeyDown { onMediaKey?(.volumeUp) }
-            return true // swallow key-up too
+            if isKeyDown { lastDownRouted = onMediaKey?(.volumeUp) ?? false }
+            return lastDownRouted
         case Self.keySoundDown:
-            if isKeyDown { onMediaKey?(.volumeDown) }
-            return true
+            if isKeyDown { lastDownRouted = onMediaKey?(.volumeDown) ?? false }
+            return lastDownRouted
         case Self.keyMute:
-            if isKeyDown { onMediaKey?(.mute) }
-            return true
+            if isKeyDown { lastDownRouted = onMediaKey?(.mute) ?? false }
+            return lastDownRouted
         default:
             return false
         }
     }
+
+    /// Whether the most recent media-key *down* was routed to a TV. Used to
+    /// swallow the paired key-up consistently.
+    private var lastDownRouted = false
 }

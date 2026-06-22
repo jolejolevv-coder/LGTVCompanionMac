@@ -196,8 +196,11 @@ public class DeviceManager: ObservableObject {
         do {
             return try await operation(client)
         } catch {
-            // Stale connection? Reconnect once and retry.
-            client.disconnect()
+            // Stale connection? Reconnect once and retry. Await the teardown
+            // (disconnectAndWait) before reconnecting — a fire-and-forget
+            // disconnect runs on the client's serial queue and would otherwise
+            // race connect() and cancel the brand-new connection.
+            await client.disconnectAndWait()
             try await client.connect()
             try await client.register()
             return try await operation(client)
@@ -221,8 +224,12 @@ public class DeviceManager: ObservableObject {
     }
 
     public func refreshAllStatuses() async {
+        // Snapshot the @Published devices array on the main thread. This runs
+        // from a background Task (keepalive timer / warm-up), and enumerating
+        // the array off-main while the UI mutates it on main is a data race.
+        let snapshot = await MainActor.run { self.devices.filter { $0.enabled } }
         await withTaskGroup(of: Void.self) { group in
-            for device in devices where device.enabled {
+            for device in snapshot {
                 group.addTask { await self.refreshStatus(for: device) }
             }
         }
@@ -509,15 +516,22 @@ public class DeviceManager: ObservableObject {
     private func startMediaKeyMonitoring() {
         let monitor = MediaKeyMonitor()
         monitor.onMediaKey = { [weak self] key in
-            self?.handleMediaKey(key)
+            // Returns whether the key was routed to a TV; the monitor only
+            // swallows it when true.
+            self?.handleMediaKey(key) ?? false
         }
         monitor.start()
         mediaKeyMonitor = monitor
     }
 
-    private func handleMediaKey(_ key: MediaKeyEvent) {
-        // Route to the first enabled device
-        guard let device = devices.first(where: { $0.enabled }) else { return }
+    /// Routes a media key to the first enabled device. Returns whether a
+    /// target existed: the caller (MediaKeyMonitor) only swallows the key when
+    /// this is true, so with no enabled device the Mac keeps normal volume
+    /// control instead of the key being eaten with nothing happening.
+    /// Called on the main thread (the event-tap source runs on the main run loop).
+    @discardableResult
+    private func handleMediaKey(_ key: MediaKeyEvent) -> Bool {
+        guard let device = devices.first(where: { $0.enabled }) else { return false }
 
         Task {
             do {
@@ -527,8 +541,15 @@ public class DeviceManager: ObservableObject {
                 case .volumeDown:
                     try await self.withConnectedClient(for: device) { try await $0.volumeDown() }
                 case .mute:
-                    let currentlyMuted = self.deviceStatuses[device.id]?.muted ?? false
-                    try await self.withConnectedClient(for: device) { try await $0.setMute(!currentlyMuted) }
+                    // Toggle off the TV's live state, in one connection. Reading
+                    // the cached deviceStatuses here would both race the main
+                    // thread and, before the first status refresh, wrongly
+                    // assume "unmuted" and send mute=true to an already-muted TV.
+                    try await self.withConnectedClient(for: device) { client in
+                        let live = try? await client.getAudioStatus()
+                        let currentlyMuted = live?.muted ?? false
+                        try await client.setMute(!currentlyMuted)
+                    }
                 }
 
                 // Refresh the published volume so the menu bar slider follows
@@ -545,6 +566,7 @@ public class DeviceManager: ObservableObject {
                 // TV unreachable — ignore
             }
         }
+        return true
     }
 
     // MARK: - Settings

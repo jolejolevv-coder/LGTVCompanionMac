@@ -59,6 +59,13 @@ class PowerEventMonitor {
         if let notifyPortRef = notifyPortRef {
             IONotificationPortDestroy(notifyPortRef)
         }
+        // Close the root-power-domain connection returned by
+        // IORegisterForSystemPower. Without this the io_connect_t (a Mach
+        // port) leaks on every stop/start of power-event monitoring.
+        if rootPort != 0 {
+            IOServiceClose(rootPort)
+            rootPort = 0
+        }
     }
 
     private func setupPowerEventHandling() {

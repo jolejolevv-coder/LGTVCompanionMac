@@ -107,6 +107,10 @@ public class WebOSClient: ObservableObject {
     private var messageId = 1
     private var pendingRequests: [String: CheckedContinuation<[String: Any], Error>] = [:]
     private var pairingContinuation: CheckedContinuation<Void, Error>?
+    /// Monotonic token identifying the current pairing attempt. A scheduled
+    /// pairing-timeout only fires for the attempt it was created for — this
+    /// stops a stale timer from a previous register() resuming a later one.
+    private var pairingAttemptID = 0
 
     /// Serial queue: all connection callbacks and shared state live here.
     private let queue = DispatchQueue(label: "com.lgtvcompanion.webosclient")
@@ -175,18 +179,27 @@ public class WebOSClient: ObservableObject {
 
             newConnection.stateUpdateHandler = { [weak self] state in
                 guard let self = self else { return }
+                // The state handler runs on `queue`. When connect() falls back
+                // from secure(3001) to insecure(3000) the old connection lives
+                // on and may later emit .failed/.cancelled — ignore those so a
+                // dead connection can't fail the pending requests of the live
+                // one. .ready is exempt: it is what installs the connection.
                 switch state {
                 case .ready:
                     DispatchQueue.main.async { self.isConnected = true }
                     self.startReceiving(on: newConnection)
                     if resumed.tryClaim() { continuation.resume() }
                 case .failed(let error):
-                    DispatchQueue.main.async { self.isConnected = false }
-                    self.failAllPending(with: .networkError(error))
+                    if self.connection === newConnection {
+                        DispatchQueue.main.async { self.isConnected = false }
+                        self.failAllPending(with: .networkError(error))
+                    }
                     if resumed.tryClaim() { continuation.resume(throwing: WebOSError.networkError(error)) }
                 case .cancelled:
-                    DispatchQueue.main.async { self.isConnected = false }
-                    self.failAllPending(with: .notConnected)
+                    if self.connection === newConnection {
+                        DispatchQueue.main.async { self.isConnected = false }
+                        self.failAllPending(with: .notConnected)
+                    }
                     if resumed.tryClaim() { continuation.resume(throwing: WebOSError.notConnected) }
                 default:
                     break
@@ -201,8 +214,15 @@ public class WebOSClient: ObservableObject {
                 }
             }
 
-            self.connection = newConnection
-            newConnection.start(queue: queue)
+            // Install + start on `queue` so every read/write of `connection`
+            // happens on the one serial queue. Because disconnect() also tears
+            // down on `queue`, a disconnect() immediately followed by connect()
+            // (the reconnect-after-error path) is ordered correctly: the
+            // teardown is enqueued first and runs before this assignment.
+            self.queue.async {
+                self.connection = newConnection
+                newConnection.start(queue: self.queue)
+            }
         }
     }
 
@@ -219,41 +239,66 @@ public class WebOSClient: ObservableObject {
         }
     }
 
+    /// Like `disconnect()`, but completes only after the teardown has actually
+    /// run on `queue`. The reconnect path must await this before connect(),
+    /// otherwise the fire-and-forget teardown can cancel the new connection.
+    public func disconnectAndWait() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            queue.async { [weak self] in
+                self?.connection?.cancel()
+                self?.connection = nil
+                self?.failAllPending(with: .notConnected)
+                cont.resume()
+            }
+        }
+        await MainActor.run {
+            self.isConnected = false
+            self.isPaired = false
+        }
+    }
+
     // MARK: - Pairing
 
     /// Registers with the TV. Completes only after the TV sends "registered"
     /// (i.e. after the user accepted the pairing prompt, if needed).
     public func register() async throws {
-        let pairingMessage: [String: Any] = [
-            "type": "register",
-            "id": "register_0",
-            "payload": [
-                "forcePairing": false,
-                "pairingType": "PROMPT",
-                "client-key": device.pairingKey ?? "",
-                "manifest": Self.manifest
-            ]
-        ]
-
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
-                self.pairingContinuation = continuation
+                // Build the message on `queue`: reading device.pairingKey here
+                // (rather than off-queue) keeps all access to `device` on the
+                // one serial queue, where handleReceivedData also writes it.
+                let pairingMessage: [String: Any] = [
+                    "type": "register",
+                    "id": "register_0",
+                    "payload": [
+                        "forcePairing": false,
+                        "pairingType": "PROMPT",
+                        "client-key": self.device.pairingKey ?? "",
+                        "manifest": Self.manifest
+                    ]
+                ]
 
-                // Pairing timeout (user has to walk to the TV)
+                self.pairingContinuation = continuation
+                self.pairingAttemptID &+= 1
+                let attempt = self.pairingAttemptID
+
+                // Pairing timeout (user has to walk to the TV). Tagged with the
+                // attempt id so a stale timer from an earlier register() cannot
+                // resume a later attempt's continuation.
                 self.queue.asyncAfter(deadline: .now() + Self.pairingTimeout) {
-                    if let cont = self.pairingContinuation {
-                        self.pairingContinuation = nil
-                        cont.resume(throwing: WebOSError.timeout)
-                    }
+                    guard attempt == self.pairingAttemptID,
+                          let cont = self.pairingContinuation else { return }
+                    self.pairingContinuation = nil
+                    cont.resume(throwing: WebOSError.timeout)
                 }
 
                 do {
                     try self.sendRaw(pairingMessage)
                 } catch {
-                    if let cont = self.pairingContinuation {
-                        self.pairingContinuation = nil
-                        cont.resume(throwing: error)
-                    }
+                    guard attempt == self.pairingAttemptID,
+                          let cont = self.pairingContinuation else { return }
+                    self.pairingContinuation = nil
+                    cont.resume(throwing: error)
                 }
             }
         }
@@ -463,6 +508,8 @@ public class WebOSClient: ObservableObject {
                 DispatchQueue.main.async { self.isPaired = true }
                 onPairingKeyUpdated?(device.id, clientKey)
             }
+            // Invalidate this attempt's pending timeout before resuming.
+            pairingAttemptID &+= 1
             if let cont = pairingContinuation {
                 pairingContinuation = nil
                 cont.resume()
@@ -472,6 +519,7 @@ public class WebOSClient: ObservableObject {
 
         if let id = json["id"] as? String, id == "register_0" {
             if type == "error" {
+                pairingAttemptID &+= 1
                 if let cont = pairingContinuation {
                     pairingContinuation = nil
                     cont.resume(throwing: WebOSError.pairingRejected)
@@ -488,8 +536,19 @@ public class WebOSClient: ObservableObject {
             return
         }
 
+        // webOS reports command-level failures two ways: a top-level
+        // type:"error", OR a type:"response" whose payload carries
+        // returnValue == false (e.g. "401 insufficient permissions", a
+        // service that exists but rejects the call). Both must surface as
+        // commandFailed so callers — notably the screenOff()/screenOn()
+        // webOS5→webOS4 fallback — actually see the failure.
+        let payload = json["payload"] as? [String: Any]
         if type == "error" {
-            let errorText = json["error"] as? String ?? "unknown error"
+            let errorText = json["error"] as? String
+                ?? payload?["errorText"] as? String ?? "unknown error"
+            continuation.resume(throwing: WebOSError.commandFailed(errorText))
+        } else if let payload = payload, (payload["returnValue"] as? Bool) == false {
+            let errorText = payload["errorText"] as? String ?? "returnValue=false"
             continuation.resume(throwing: WebOSError.commandFailed(errorText))
         } else {
             continuation.resume(returning: json)
@@ -504,6 +563,7 @@ public class WebOSClient: ObservableObject {
             continuation.resume(throwing: error)
         }
         if let cont = pairingContinuation {
+            pairingAttemptID &+= 1
             pairingContinuation = nil
             cont.resume(throwing: error)
         }

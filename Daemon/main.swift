@@ -11,27 +11,34 @@ import Foundation
 class Daemon {
     private let deviceManager = DeviceManager()
     private var isRunning = true
-    
+    private var signalSources: [DispatchSourceSignal] = []
+
     func run() {
         print("LGTV Companion Daemon starting...")
-        
+
         // Start monitoring power events
         deviceManager.startPowerEventMonitoring()
-        
+
         print("Power event monitoring started")
         print("Monitoring \(deviceManager.devices.count) device(s)")
-        
-        // Set up signal handlers for graceful shutdown
-        signal(SIGTERM) { _ in
-            print("Received SIGTERM, shutting down...")
-            exit(0)
+
+        // Graceful shutdown via GCD signal sources. A raw signal() handler may
+        // only call async-signal-safe functions — print()/exit() are not, and
+        // can deadlock or corrupt the heap if the signal lands mid-allocation.
+        // A DispatchSource handler runs on a normal thread, so it can log and
+        // tear down safely.
+        for sig in [SIGTERM, SIGINT] {
+            signal(sig, SIG_IGN) // disable default termination; the source handles it
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                print("Received signal \(sig), shutting down...")
+                self?.deviceManager.stopPowerEventMonitoring()
+                exit(0)
+            }
+            source.resume()
+            signalSources.append(source)
         }
-        
-        signal(SIGINT) { _ in
-            print("Received SIGINT, shutting down...")
-            exit(0)
-        }
-        
+
         // Keep running
         RunLoop.main.run()
     }

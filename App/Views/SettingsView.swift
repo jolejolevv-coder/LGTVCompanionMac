@@ -195,7 +195,7 @@ struct SettingsView: View {
 
     private var aboutTab: some View {
         VStack(spacing: 20) {
-            if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+            if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: image)
                     .resizable()

@@ -106,8 +106,12 @@ public enum DisplayControl {
     /// expose supersampled framebuffers larger than the panel.
     private static func panelWidth(of modes: [CGDisplayMode]) -> Int {
         let oneToOne = modes.filter { $0.pixelWidth == $0.width }
+        // Fall back to the largest *logical* width, not pixelWidth: panelWidth
+        // is compared against logical mode widths (info.width == panelWidth) to
+        // keep the native 100% entry. A pixel-width fallback never matches any
+        // logical width, so on HiDPI-only panels the native mode was dropped.
         return oneToOne.map(\.width).max()
-            ?? modes.map(\.pixelWidth).max()
+            ?? modes.map(\.width).max()
             ?? 0
     }
 
@@ -130,10 +134,14 @@ public enum DisplayControl {
     public static func currentMode(for display: CGDirectDisplayID) -> DisplayModeInfo? {
         guard let mode = CGDisplayCopyDisplayMode(display) else { return nil }
         let all = scalingModes(for: display)
+        // Match the active mode exactly (logical size + physical pixels). A
+        // looser logical-only fallback used to return a *different* variant
+        // (e.g. the HiDPI/60Hz survivor when the active mode is non-HiDPI or
+        // 59.94Hz), so the menu's checkmark/label reflected the wrong mode.
         if let match = all.first(where: {
             $0.cgMode.width == mode.width && $0.cgMode.height == mode.height
                 && $0.cgMode.pixelWidth == mode.pixelWidth
-        }) ?? all.first(where: { $0.width == mode.width && $0.height == mode.height }) {
+        }) {
             return match
         }
         // Current mode not in our filtered list (e.g. an exotic
