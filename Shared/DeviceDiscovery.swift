@@ -50,6 +50,14 @@ public class DeviceDiscovery: ObservableObject {
         "upnp:rootdevice"
     ]
 
+    /// webOS control port (secure WebSocket). Only addresses that actually
+    /// accept a connection here are real, pairable TVs — SSDP otherwise also
+    /// surfaces stale leases and other "LG" UPnP responders that can't be
+    /// controlled, which only confuse the user with un-pairable entries.
+    private static let controlPort: UInt16 = 3001
+    private static let probeQueue = DispatchQueue(label: "com.lgtvcompanion.discovery.probe")
+    private static let probeTimeout: TimeInterval = 3
+
     /// Start scanning for LG WebOS devices
     public func startScan(timeout: TimeInterval = 8.0) {
         guard !isScanning else { return }
@@ -176,14 +184,12 @@ public class DeviceDiscovery: ObservableObject {
             fetchDeviceDescription(from: url, ipAddress: ipAddress, generation: generation)
         } else if !ipAddress.isEmpty {
             // Add device with limited info
-            DispatchQueue.main.async {
-                self.addDeviceIfNew(DiscoveredDevice(
-                    ipAddress: ipAddress,
-                    friendlyName: "",
-                    modelName: "LG WebOS TV",
-                    macAddress: nil
-                ), generation: generation)
-            }
+            considerDevice(DiscoveredDevice(
+                ipAddress: ipAddress,
+                friendlyName: "",
+                modelName: "LG WebOS TV",
+                macAddress: nil
+            ), generation: generation)
         }
     }
 
@@ -197,29 +203,62 @@ public class DeviceDiscovery: ObservableObject {
 
             guard let data = data, error == nil else {
                 // Description fetch failed — still record the device
-                DispatchQueue.main.async {
-                    self.addDeviceIfNew(DiscoveredDevice(
-                        ipAddress: ipAddress,
-                        friendlyName: "",
-                        modelName: "LG WebOS TV",
-                        macAddress: nil
-                    ), generation: generation)
-                }
+                self.considerDevice(DiscoveredDevice(
+                    ipAddress: ipAddress,
+                    friendlyName: "",
+                    modelName: "LG WebOS TV",
+                    macAddress: nil
+                ), generation: generation)
                 return
             }
 
             let parser = DeviceDescriptionParser()
             parser.parse(data)
 
-            DispatchQueue.main.async {
-                self.addDeviceIfNew(DiscoveredDevice(
-                    ipAddress: ipAddress,
-                    friendlyName: parser.friendlyName,
-                    modelName: parser.modelName,
-                    macAddress: nil // MAC address typically not in SSDP
-                ), generation: generation)
-            }
+            self.considerDevice(DiscoveredDevice(
+                ipAddress: ipAddress,
+                friendlyName: parser.friendlyName,
+                modelName: parser.modelName,
+                macAddress: nil // MAC address typically not in SSDP
+            ), generation: generation)
         }.resume()
+    }
+
+    /// Only list a discovered address if it actually accepts a connection on
+    /// the webOS control port. This drops stale DHCP leases and non-TV "LG"
+    /// UPnP responders that answer SSDP but can't be paired/controlled.
+    private func considerDevice(_ device: DiscoveredDevice, generation: Int) {
+        guard !device.ipAddress.isEmpty else { return }
+        probeControlPort(device.ipAddress) { [weak self] reachable in
+            guard reachable else { return }
+            DispatchQueue.main.async {
+                self?.addDeviceIfNew(device, generation: generation)
+            }
+        }
+    }
+
+    /// TCP-connect to the control port with a short timeout. Plain TCP (no TLS)
+    /// is enough to tell "something is listening" from "connection refused".
+    private func probeControlPort(_ host: String, completion: @escaping (Bool) -> Void) {
+        guard let port = NWEndpoint.Port(rawValue: Self.controlPort) else {
+            completion(false); return
+        }
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
+        let once = ResumeGuard()
+        func finish(_ ok: Bool) {
+            guard once.tryClaim() else { return }
+            conn.cancel()
+            completion(ok)
+        }
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .ready: finish(true)
+            case .failed, .cancelled: finish(false)
+            default: break
+            }
+        }
+        conn.start(queue: Self.probeQueue)
+        Self.probeQueue.asyncAfter(deadline: .now() + Self.probeTimeout) { finish(false) }
     }
 
     /// Add device to list if not already present (must run on main). Drops
