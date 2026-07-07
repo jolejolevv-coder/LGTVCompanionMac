@@ -533,40 +533,96 @@ public class DeviceManager: ObservableObject {
     private func handleMediaKey(_ key: MediaKeyEvent) -> Bool {
         guard let device = devices.first(where: { $0.enabled }) else { return false }
 
-        Task {
-            do {
-                switch key {
-                case .volumeUp:
-                    try await self.withConnectedClient(for: device) { try await $0.volumeUp() }
-                case .volumeDown:
-                    try await self.withConnectedClient(for: device) { try await $0.volumeDown() }
-                case .mute:
-                    // Toggle off the TV's live state, in one connection. Reading
-                    // the cached deviceStatuses here would both race the main
-                    // thread and, before the first status refresh, wrongly
-                    // assume "unmuted" and send mute=true to an already-muted TV.
-                    try await self.withConnectedClient(for: device) { client in
-                        let live = try? await client.getAudioStatus()
-                        let currentlyMuted = live?.muted ?? false
-                        try await client.setMute(!currentlyMuted)
-                    }
+        switch key {
+        case .volumeUp:
+            enqueueVolumeStep(+1, for: device)
+        case .volumeDown:
+            enqueueVolumeStep(-1, for: device)
+        case .mute:
+            Task {
+                // Toggle off the TV's live state, in one connection. Reading
+                // the cached deviceStatuses here would both race the main
+                // thread and, before the first status refresh, wrongly
+                // assume "unmuted" and send mute=true to an already-muted TV.
+                try? await self.withConnectedClient(for: device) { client in
+                    let live = try? await client.getAudioStatus()
+                    let currentlyMuted = live?.muted ?? false
+                    try await client.setMute(!currentlyMuted)
                 }
-
-                // Refresh the published volume so the menu bar slider follows
-                if let audio = try? await self.withConnectedClient(for: device, { try await $0.getAudioStatus() }) {
-                    await MainActor.run {
-                        var status = self.deviceStatuses[device.id] ?? DeviceStatus()
-                        status.volume = audio.volume
-                        status.muted = audio.muted
-                        if status.powerState == nil { status.powerState = "Active" }
-                        self.deviceStatuses[device.id] = status
-                    }
-                }
-            } catch {
-                // TV unreachable — ignore
+                await self.publishAudioStatus(for: device)
             }
         }
         return true
+    }
+
+    // MARK: Volume key pipeline
+
+    /// Net outstanding volume steps (+ up / − down). Main-thread only.
+    private var pendingVolumeSteps = 0
+    /// Whether the serial volume worker task is currently draining the counter.
+    private var volumeWorkerActive = false
+
+    /// Coalesces rapid volume-key presses into a counter drained by ONE serial
+    /// worker task. The previous per-press `Task { withConnectedClient … }`
+    /// spawned an unbounded number of concurrent tasks under key-repeat
+    /// (~15 events/s while the key is held), each doing two network round
+    /// trips — they overtook each other and made the volume lag and jump.
+    /// Runs on the main thread (see handleMediaKey).
+    private func enqueueVolumeStep(_ delta: Int, for device: WebOSDevice) {
+        pendingVolumeSteps += delta
+        guard !volumeWorkerActive else { return }
+        volumeWorkerActive = true
+
+        Task {
+            while true {
+                let step = await MainActor.run { () -> Int in
+                    if self.pendingVolumeSteps > 0 { self.pendingVolumeSteps -= 1; return 1 }
+                    if self.pendingVolumeSteps < 0 { self.pendingVolumeSteps += 1; return -1 }
+                    return 0
+                }
+                if step == 0 { break }
+
+                do {
+                    try await self.withConnectedClient(for: device) { client in
+                        if step > 0 { try await client.volumeUp() }
+                        else { try await client.volumeDown() }
+                    }
+                } catch {
+                    // TV unreachable — drop whatever is still queued; replaying
+                    // stale key presses seconds later would be worse.
+                    await MainActor.run { self.pendingVolumeSteps = 0 }
+                    break
+                }
+            }
+
+            // One status refresh after the burst, not one per key press.
+            await self.publishAudioStatus(for: device)
+
+            await MainActor.run {
+                self.volumeWorkerActive = false
+                // Presses that arrived while the status was being published
+                // restart the worker so they aren't stranded in the counter.
+                if self.pendingVolumeSteps != 0 {
+                    let d = self.pendingVolumeSteps > 0 ? 1 : -1
+                    self.pendingVolumeSteps -= d
+                    self.enqueueVolumeStep(d, for: device)
+                }
+            }
+        }
+    }
+
+    /// Fetches volume/mute once and publishes it so the menu-bar slider follows.
+    private func publishAudioStatus(for device: WebOSDevice) async {
+        guard let audio = try? await withConnectedClient(for: device, { try await $0.getAudioStatus() }) else {
+            return
+        }
+        await MainActor.run {
+            var status = self.deviceStatuses[device.id] ?? DeviceStatus()
+            status.volume = audio.volume
+            status.muted = audio.muted
+            if status.powerState == nil { status.powerState = "Active" }
+            self.deviceStatuses[device.id] = status
+        }
     }
 
     // MARK: - Settings
