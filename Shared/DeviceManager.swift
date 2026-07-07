@@ -502,6 +502,10 @@ public class DeviceManager: ObservableObject {
         }
     }
 
+    /// Whether this launch already showed the Accessibility prompt. Keeps
+    /// ensureMediaKeyTap (called from several views) from re-prompting.
+    private var didPromptForAccessibility = false
+
     /// Re-installs the event tap if media keys are enabled but the tap
     /// couldn't be created earlier (e.g. Accessibility permission was
     /// granted only after launch). Call this periodically / on UI focus.
@@ -510,6 +514,15 @@ public class DeviceManager: ObservableObject {
         if let monitor = mediaKeyMonitor, monitor.isUsingEventTap { return }
         if MediaKeyMonitor.hasAccessibilityPermission {
             startMediaKeyMonitoring()
+        } else if !didPromptForAccessibility {
+            // Feature is enabled but the permission is missing — typically
+            // because an app update re-signed the binary (ad-hoc signatures
+            // change every build) and macOS silently invalidated the old
+            // grant. Prompt once per launch so the user can re-grant without
+            // hunting for the settings toggle; the keys silently doing
+            // nothing is worse than one extra dialog.
+            didPromptForAccessibility = true
+            MediaKeyMonitor.requestAccessibilityPermission()
         }
     }
 
