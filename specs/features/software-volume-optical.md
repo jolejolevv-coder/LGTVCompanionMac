@@ -46,6 +46,9 @@ Punkte brauchen die manuelle Abnahme am Lautsprecher (Schritte in `USAGE.md`).
       die Tasten gehen wieder an macOS (Listener plus Test der Moduswahl,
       Wechsel selbst noch nicht in der App ausprobiert).
 - [ ] Verhalten nach Ruhezustand in der App geprüft.
+- [x] Anzeige des Pegels oben rechts bei jedem Tastendruck (16 Segmente,
+      Symbol für stumm), weil macOS im Software Modus kein eigenes Overlay
+      zeigt. Nachtrag vom 02.10.2026 auf Wunsch nach dem ersten Test.
 
 Abweichung vom ersten Entwurf: macOS bietet keine öffentliche Abfrage, ob die
 Freigabe für System Audio erteilt ist. Die App kann eine fehlende Freigabe

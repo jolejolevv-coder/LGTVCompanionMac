@@ -66,6 +66,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.applicationIconImage = icon
         }
 
+        DeviceManager.shared.onSoftwareVolumeKey = { level, muted in
+            VolumeHUD.shared.show(level: level, muted: muted)
+        }
+
         // Install the volume-key event tap at launch, independent of any
         // window. As a pure menu-bar app no window opens on start, so relying
         // on a view's .task meant the keys only began working after the user

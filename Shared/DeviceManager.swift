@@ -56,6 +56,11 @@ public class DeviceManager: ObservableObject {
     @Published public private(set) var softwareVolumeMuted = false
     /// True while the volume keys and the menu slider drive the software volume.
     @Published public private(set) var softwareVolumeActive = false
+    /// Called on the main thread after a keyboard key changed the software
+    /// volume (level 0...1, muted). The keys are swallowed in that mode, so
+    /// the app shows its own on-screen display. Not called for the menu
+    /// slider, which already shows the value.
+    public var onSoftwareVolumeKey: ((Double, Bool) -> Void)?
 
     /// Apps allowed to keep the TV on while they hold a display-sleep
     /// assertion (i.e. while playing video). Persisted by bundle ID so the
@@ -718,6 +723,7 @@ public class DeviceManager: ObservableObject {
         case .mute:
             toggleSoftwareMute()
         }
+        onSoftwareVolumeKey?(softwareVolumeLevel, softwareVolumeMuted)
     }
 
     /// Remembers whether the primary TV (the one the volume keys go to) can
