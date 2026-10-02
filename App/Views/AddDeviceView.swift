@@ -69,11 +69,11 @@ struct AddDeviceView: View {
                             detectMacAddress()
                         }
                         .disabled(isDetectingMac || !WakeOnLAN.isValidIPAddress(ipAddress))
-                        .help("Read the MAC address from the network. The TV must be on.")
+                        .help("Ask the TV for its MAC address. The TV must be on.")
                     }
 
                     if macDetectionFailed {
-                        Text("No device answered at this IP address. Turn the TV on, or enter the MAC address manually.")
+                        Text("No TV answered at this IP address. Turn the TV on, or enter the MAC address manually.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

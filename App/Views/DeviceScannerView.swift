@@ -202,7 +202,7 @@ struct DiscoveredDeviceRow: View {
             }
             
             Text(device.macAddress != nil
-                 ? "MAC address detected from your network. If Wake-on-LAN fails, compare it with the TV's network settings."
+                 ? "MAC address reported by the TV for its current network connection (Wi-Fi or cable). If the TV sleeps on a different connection, enter that one's MAC instead."
                  : "MAC address could not be detected. Enter it manually; you can find it in your TV's network settings.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)

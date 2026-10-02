@@ -2,79 +2,67 @@
 //  MACAddressResolver.swift
 //  LGTV Companion Shared
 //
-//  Finds a device's MAC address from its IP, so the user does not have to
-//  copy it from the TV's network settings. Wake-on-LAN needs the MAC.
+//  Finds a TV's MAC address from its IP, so the user does not have to copy it
+//  from the TV's network settings. Wake-on-LAN needs the MAC.
 //
-//  The Mac already knows the MAC of every host on the local network it has
-//  talked to: it is in the ARP table. We read it from there.
+//  The TV states it itself: its SSDP answer for the DIAL service carries
+//  `WAKEUP: MAC=80:5b:65:d6:27:e0;Timeout=60`, the address to wake it on the
+//  interface it is currently using. We ask the TV directly (unicast SSDP).
 //
-//  macOS only shows ARP entries to processes that hold the Local Network
-//  permission. The app has it (it needs it to reach the TV at all); a process
-//  without it gets "no entry" for every host, which reads as "not found".
+//  Reading the Mac's ARP table would be the generic way, but macOS hides ARP
+//  entries from apps (Local Network privacy), even with the permission
+//  granted: `arp` launched by the app reports "no entry" for every host.
 //
 
 import Foundation
-import Network
 
 public enum MACAddressResolver {
-    private static let arpPath = "/usr/sbin/arp"
-    /// webOS control port. Connecting to it makes the Mac resolve the TV's
-    /// MAC, which fills the ARP table. Whether the port answers is irrelevant.
-    private static let pokePort: UInt16 = 3001
-    private static let pokeTimeout: TimeInterval = 1.5
+    private static let ssdpPort: UInt16 = 1900
+    /// The only SSDP service whose answer includes the WAKEUP header.
+    private static let searchTarget = "urn:dial-multiscreen-org:service:dial:1"
+    private static let wakeupHeader = "WAKEUP:"
+    /// How long to wait for the TV's answer. It normally arrives within
+    /// 100 ms; UDP may drop a packet, hence the second attempt.
+    private static let answerTimeoutSeconds = 1
+    private static let attempts = 2
+    private static let maxAnswerBytes = 4096
     private static let octetCount = 6
 
-    /// Contacts the host once so the ARP table has an entry, then looks the
-    /// MAC up. Returns nil if the host is off, not on the local network, or
-    /// the IP is malformed.
+    /// Asks the device at `ip` for its Wake-on-LAN MAC address. Returns nil
+    /// if the IP is malformed, the device is off, or it is not a TV that
+    /// answers DIAL searches.
     public static func resolve(ip: String) async -> String? {
         guard WakeOnLAN.isValidIPAddress(ip) else { return nil }
-        await poke(ip: ip)
-        return lookup(ip: ip)
-    }
-
-    /// Reads the ARP table only. Use when the host was contacted just before.
-    /// Blocks for a few milliseconds; do not call on the main thread.
-    public static func lookup(ip: String) -> String? {
-        guard WakeOnLAN.isValidIPAddress(ip) else { return nil }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: arpPath)
-        process.arguments = ["-n", ip]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
+        return await Task.detached(priority: .userInitiated) {
+            for _ in 0..<attempts {
+                if let mac = askOnce(ip: ip) { return mac }
+            }
             return nil
-        }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        return parse(arpOutput: String(decoding: data, as: UTF8.self), ip: ip)
+        }.value
     }
 
-    /// Extracts the MAC for `ip` from `arp -n` output, for example
-    /// `? (192.168.178.25) at 80:5b:65:d6:27:e0 on en0 ifscope [ethernet]`.
-    /// Entries without an answer read `at (incomplete)` and yield nil.
-    static func parse(arpOutput: String, ip: String) -> String? {
-        for line in arpOutput.split(separator: "\n") {
-            guard line.contains("(\(ip))") else { continue }
-            let words = line.split(separator: " ")
-            guard let atIndex = words.firstIndex(of: "at"), atIndex + 1 < words.count,
-                  let mac = normalize(String(words[atIndex + 1])) else { continue }
-            return mac
+    /// Extracts the MAC from an SSDP answer's WAKEUP header, for example
+    /// `WAKEUP: MAC=80:5b:65:d6:27:e0;Timeout=60`. Header names are
+    /// case-insensitive.
+    static func parse(ssdpResponse: String) -> String? {
+        for rawLine in ssdpResponse.components(separatedBy: "\r\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard line.uppercased().hasPrefix(wakeupHeader) else { continue }
+            for field in line.dropFirst(wakeupHeader.count).split(separator: ";") {
+                let pair = field.trimmingCharacters(in: .whitespaces)
+                guard pair.uppercased().hasPrefix("MAC=") else { continue }
+                return normalize(String(pair.dropFirst("MAC=".count)))
+            }
         }
         return nil
     }
 
-    /// `arp` drops leading zeros ("0:1b:c:…"). Returns the canonical form
-    /// "00:1B:0C:…", or nil if the text is not six hex octets or is a
-    /// placeholder address.
+    /// Returns the canonical form "00:1B:0C:…" for six hex octets separated
+    /// by ":" or "-", tolerating dropped leading zeros. nil for anything else
+    /// and for placeholder addresses.
     static func normalize(_ raw: String) -> String? {
-        let parts = raw.split(separator: ":", omittingEmptySubsequences: false)
+        let parts = raw.trimmingCharacters(in: .whitespaces)
+            .split(omittingEmptySubsequences: false, whereSeparator: { $0 == ":" || $0 == "-" })
         guard parts.count == octetCount else { return nil }
 
         var octets: [String] = []
@@ -89,27 +77,43 @@ public enum MACAddressResolver {
         return mac
     }
 
-    /// Opens a TCP connection and waits until it settles or times out.
-    private static func poke(ip: String) async {
-        guard let port = NWEndpoint.Port(rawValue: pokePort) else { return }
-        let connection = NWConnection(host: NWEndpoint.Host(ip), port: port, using: .tcp)
-        let queue = DispatchQueue(label: "com.lgtvcompanion.macresolver")
+    /// One unicast M-SEARCH and one wait for the answer. Blocking; runs off
+    /// the main thread. A plain UDP socket is used because the TV answers
+    /// from a different source port, which a connected socket would drop.
+    private static func askOnce(ip: String) -> String? {
+        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
 
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let once = ResumeGuard()
-            @Sendable func finish() {
-                guard once.tryClaim() else { return }
-                connection.cancel()
-                continuation.resume()
+        var timeout = timeval(tv_sec: answerTimeoutSeconds, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = ssdpPort.bigEndian
+        guard inet_pton(AF_INET, ip, &address.sin_addr) == 1 else { return nil }
+
+        let request = [
+            "M-SEARCH * HTTP/1.1",
+            "HOST: \(ip):\(ssdpPort)",
+            "MAN: \"ssdp:discover\"",
+            "MX: 1",
+            "ST: \(searchTarget)",
+            "", ""
+        ].joined(separator: "\r\n")
+        let requestBytes = Array(request.utf8)
+
+        let sent = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                sendto(fd, requestBytes, requestBytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready, .failed, .cancelled: finish()
-                default: break
-                }
-            }
-            connection.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + pokeTimeout) { finish() }
         }
+        guard sent == requestBytes.count else { return nil }
+
+        var buffer = [UInt8](repeating: 0, count: maxAnswerBytes)
+        let received = recv(fd, &buffer, buffer.count, 0)
+        guard received > 0 else { return nil }
+        return parse(ssdpResponse: String(decoding: buffer[0..<received], as: UTF8.self))
     }
 }

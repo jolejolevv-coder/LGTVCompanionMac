@@ -231,17 +231,19 @@ public class DeviceDiscovery: ObservableObject {
         guard !device.ipAddress.isEmpty else { return }
         probeControlPort(device.ipAddress) { [weak self] reachable in
             guard reachable else { return }
-            // The probe just talked to the host, so its MAC is in the Mac's
-            // ARP table now. Reading it here spares the user from copying it
-            // out of the TV's network settings.
-            let resolved = DiscoveredDevice(
-                ipAddress: device.ipAddress,
-                friendlyName: device.friendlyName,
-                modelName: device.modelName,
-                macAddress: device.macAddress ?? MACAddressResolver.lookup(ip: device.ipAddress)
-            )
-            DispatchQueue.main.async {
-                self?.addDeviceIfNew(resolved, generation: generation)
+            // Ask the TV for its Wake-on-LAN MAC, which spares the user from
+            // copying it out of the TV's network settings.
+            Task {
+                let mac = await MACAddressResolver.resolve(ip: device.ipAddress)
+                let resolved = DiscoveredDevice(
+                    ipAddress: device.ipAddress,
+                    friendlyName: device.friendlyName,
+                    modelName: device.modelName,
+                    macAddress: device.macAddress ?? mac
+                )
+                DispatchQueue.main.async {
+                    self?.addDeviceIfNew(resolved, generation: generation)
+                }
             }
         }
     }
