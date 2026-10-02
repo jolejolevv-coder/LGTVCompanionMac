@@ -95,12 +95,30 @@ final class ResumeGuard {
     }
 }
 
+/// A status change the TV pushed on its own, without being asked.
+public enum WebOSStatusUpdate {
+    case audio(volume: Int?, muted: Bool?, adjustable: Bool?)
+    case power(state: String)
+}
+
 public class WebOSClient: ObservableObject {
     @Published public var isConnected = false
     @Published public var isPaired = false
 
     /// Called when the TV hands out a (new) client key, so the owner can persist it.
     public var onPairingKeyUpdated: ((UUID, String) -> Void)?
+
+    /// Called on the client's queue whenever the TV reports a status change
+    /// (and once right after each connection with the current state). Set it
+    /// before connecting.
+    public var onStatusUpdate: ((UUID, WebOSStatusUpdate) -> Void)?
+
+    /// Message ids of the standing subscriptions. The TV answers every
+    /// change with the id of the subscription it belongs to.
+    private static let audioSubscriptionID = "status_audio"
+    private static let powerSubscriptionID = "status_power"
+    private static let audioStatusURI = "ssap://audio/getVolume"
+    private static let powerStateURI = "ssap://com.webos.service.tvpower/power/getPowerState"
 
     private var connection: NWConnection?
     public private(set) var device: WebOSDevice
@@ -363,9 +381,12 @@ public class WebOSClient: ObservableObject {
 
     /// Current power state, e.g. "Active", "Active Standby", "Screen Off".
     public func getPowerState() async throws -> String {
-        let response = try await request(uri: "ssap://com.webos.service.tvpower/power/getPowerState")
-        let payload = response["payload"] as? [String: Any]
-        return payload?["state"] as? String ?? "Unknown"
+        let response = try await request(uri: Self.powerStateURI)
+        return Self.parsePowerState(response["payload"] as? [String: Any]) ?? "Unknown"
+    }
+
+    static func parsePowerState(_ payload: [String: Any]?) -> String? {
+        payload?["state"] as? String
     }
 
     public func getDeviceInfo() async throws -> [String: Any] {
@@ -390,12 +411,46 @@ public class WebOSClient: ObservableObject {
     /// as optical, where volumeUp/volumeDown/setVolume have no effect. Older
     /// firmware does not report it (nil).
     public func getAudioStatus() async throws -> (volume: Int?, muted: Bool?, adjustable: Bool?) {
-        let response = try await request(uri: "ssap://audio/getVolume")
-        let payload = response["payload"] as? [String: Any]
+        let response = try await request(uri: Self.audioStatusURI)
+        return Self.parseAudioStatus(response["payload"] as? [String: Any])
+    }
+
+    static func parseAudioStatus(_ payload: [String: Any]?) -> (volume: Int?, muted: Bool?, adjustable: Bool?) {
         if let vs = payload?["volumeStatus"] as? [String: Any] {
             return (vs["volume"] as? Int, vs["muteStatus"] as? Bool, vs["adjustVolume"] as? Bool)
         }
         return (payload?["volume"] as? Int, payload?["muted"] as? Bool, nil)
+    }
+
+    // MARK: - Status Subscriptions
+
+    /// Asks the TV to report volume and power changes by itself. Subscriptions
+    /// belong to one connection, so this runs after every registration.
+    /// Must be called on `queue`.
+    private func startStatusSubscriptions() {
+        for (id, uri) in [(Self.audioSubscriptionID, Self.audioStatusURI),
+                          (Self.powerSubscriptionID, Self.powerStateURI)] {
+            // A failed send means the connection is gone; the next
+            // registration subscribes again.
+            try? sendRaw(["type": "subscribe", "id": id, "uri": uri])
+        }
+    }
+
+    /// Returns true if the message belonged to a subscription. Runs on `queue`.
+    private func handleSubscriptionMessage(id: String, type: String?, payload: [String: Any]?) -> Bool {
+        guard id == Self.audioSubscriptionID || id == Self.powerSubscriptionID else { return false }
+        // An "error" here means this firmware lacks the subscription. The
+        // periodic poll still covers that value, so there is nothing to do.
+        guard type == "response", let payload = payload else { return true }
+
+        if id == Self.audioSubscriptionID {
+            let audio = Self.parseAudioStatus(payload)
+            onStatusUpdate?(device.id, .audio(volume: audio.volume, muted: audio.muted,
+                                              adjustable: audio.adjustable))
+        } else if let state = Self.parsePowerState(payload) {
+            onStatusUpdate?(device.id, .power(state: state))
+        }
+        return true
     }
 
     public func setVolume(_ volume: Int) async throws {
@@ -545,6 +600,7 @@ public class WebOSClient: ObservableObject {
                 pairingContinuation = nil
                 cont.resume()
             }
+            startStatusSubscriptions()
             return
         }
 
@@ -558,6 +614,11 @@ public class WebOSClient: ObservableObject {
             }
             // type == "response" with pairingType PROMPT: user must confirm
             // on the TV — keep waiting for "registered".
+            return
+        }
+
+        if let id = json["id"] as? String,
+           handleSubscriptionMessage(id: id, type: type, payload: json["payload"] as? [String: Any]) {
             return
         }
 

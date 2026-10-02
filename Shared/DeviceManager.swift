@@ -158,8 +158,35 @@ public class DeviceManager: ObservableObject {
                 self?.storePairingKey(key, for: deviceId)
             }
         }
+        // Volume and power changes pushed by the TV, so the UI and the
+        // volume routing follow at once instead of at the next poll.
+        client.onStatusUpdate = { [weak self] deviceId, update in
+            DispatchQueue.main.async {
+                self?.applyStatusUpdate(update, for: deviceId)
+            }
+        }
         clients[device.id] = client
         return client
+    }
+
+    /// Main thread. Merges a pushed change into the published status.
+    private func applyStatusUpdate(_ update: WebOSStatusUpdate, for deviceId: UUID) {
+        guard let device = devices.first(where: { $0.id == deviceId }) else { return }
+        var status = deviceStatuses[deviceId] ?? DeviceStatus()
+
+        switch update {
+        case .audio(let volume, let muted, let adjustable):
+            if let volume = volume { status.volume = volume }
+            if let muted = muted { status.muted = muted }
+            if let adjustable = adjustable { status.volumeAdjustable = adjustable }
+            // Audio reports only come from a TV that is up.
+            if status.powerState == nil { status.powerState = "Active" }
+        case .power(let state):
+            status.powerState = state
+        }
+
+        deviceStatuses[deviceId] = status
+        noteVolumeAdjustable(status.volumeAdjustable, for: device)
     }
 
     private func storePairingKey(_ key: String, for deviceId: UUID) {
