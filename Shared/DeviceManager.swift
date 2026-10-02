@@ -20,11 +20,16 @@ public struct DeviceStatus: Equatable {
     public var powerState: String?   // "Active", "Screen Off", "Active Standby", nil = unreachable
     public var volume: Int?
     public var muted: Bool?
+    /// Whether the TV can change the volume of its current sound output.
+    /// false on fixed-level outputs such as optical. nil = not reported.
+    public var volumeAdjustable: Bool?
 
-    public init(powerState: String? = nil, volume: Int? = nil, muted: Bool? = nil) {
+    public init(powerState: String? = nil, volume: Int? = nil, muted: Bool? = nil,
+                volumeAdjustable: Bool? = nil) {
         self.powerState = powerState
         self.volume = volume
         self.muted = muted
+        self.volumeAdjustable = volumeAdjustable
     }
 
     public var isReachable: Bool { powerState != nil }
@@ -34,7 +39,7 @@ public struct DeviceStatus: Equatable {
 public class DeviceManager: ObservableObject {
     /// Shared instance so the AppDelegate can reach the manager during
     /// shutdown handling.
-    public static let shared = DeviceManager()
+    public static let shared = DeviceManager(enableSoftwareVolume: true)
 
     @Published public var devices: [WebOSDevice] = []
     @Published public var deviceStatuses: [UUID: DeviceStatus] = [:]
@@ -42,6 +47,15 @@ public class DeviceManager: ObservableObject {
     @Published public var userIdleEnabled = false
     @Published public var userIdleTimeout: TimeInterval = 300 // 5 minutes
     @Published public var mediaKeysEnabled = false
+
+    /// Mac-side software volume, used while the TV cannot change the volume
+    /// itself (fixed-level output such as optical).
+    @Published public private(set) var softwareVolumeEnabled = true
+    /// Slider position 0...1 (not the gain, see SoftwareVolume.gain).
+    @Published public private(set) var softwareVolumeLevel: Double = 1
+    @Published public private(set) var softwareVolumeMuted = false
+    /// True while the volume keys and the menu slider drive the software volume.
+    @Published public private(set) var softwareVolumeActive = false
 
     /// Apps allowed to keep the TV on while they hold a display-sleep
     /// assertion (i.e. while playing video). Persisted by bundle ID so the
@@ -55,6 +69,15 @@ public class DeviceManager: ObservableObject {
     private var mediaKeyMonitor: MediaKeyMonitor?
     private var keepaliveTimer: Timer?
 
+    /// nil in the daemon: two processes tapping the system audio at once
+    /// would each mute and replay it.
+    private let softwareVolumeController: SoftwareVolumeController?
+    /// Last answer of the primary TV to "can you change the volume?".
+    /// Persisted so a restart does not play at full level until the first
+    /// status poll comes back, and so one failed poll does not drop the
+    /// attenuation.
+    private var tvCanAdjustVolume: Bool?
+
     private let userDefaults = UserDefaults.standard
     private let devicesKey = "lgtvcompanion.devices"
     private let settingsKey = "lgtvcompanion.settings"
@@ -64,9 +87,17 @@ public class DeviceManager: ObservableObject {
     private static let wakeRetryCount = 5
     private static let wakeRetryDelayNs: UInt64 = 2_000_000_000 // 2s
 
-    public init() {
+    public init(enableSoftwareVolume: Bool = false) {
+        softwareVolumeController = enableSoftwareVolume ? SoftwareVolumeController() : nil
         loadDevices()
         loadSettings()
+        softwareVolumeController?.onOutputDeviceChanged = { [weak self] in
+            // The tap is bound to the old output device. Rebuild it for the
+            // new one, or drop it if the sound no longer goes to a display.
+            self?.softwareVolumeController?.stop()
+            self?.syncSoftwareVolume()
+        }
+        syncSoftwareVolume()
         // Only auto-start when the permission is already there — otherwise
         // macOS would show the Accessibility prompt on every launch.
         if mediaKeysEnabled && MediaKeyMonitor.hasAccessibilityPermission {
@@ -215,12 +246,16 @@ public class DeviceManager: ObservableObject {
         if let result = try? await withConnectedClient(for: device, { client -> DeviceStatus in
             let state = try await client.getPowerState()
             let audio = try? await client.getAudioStatus()
-            return DeviceStatus(powerState: state, volume: audio?.volume, muted: audio?.muted)
+            return DeviceStatus(powerState: state, volume: audio?.volume, muted: audio?.muted,
+                                volumeAdjustable: audio?.adjustable)
         }) {
             status = result
         }
         let final = status
-        await MainActor.run { self.deviceStatuses[device.id] = final }
+        await MainActor.run {
+            self.deviceStatuses[device.id] = final
+            self.noteVolumeAdjustable(final.volumeAdjustable, for: device)
+        }
     }
 
     public func refreshAllStatuses() async {
@@ -401,6 +436,11 @@ public class DeviceManager: ObservableObject {
                 await self.powerOffAll(targets)
 
             case .systemDidWake, .displayDidWake:
+                // The tap does not reliably survive sleep. Rebuild it.
+                await MainActor.run {
+                    self.softwareVolumeController?.stop()
+                    self.syncSoftwareVolume()
+                }
                 await self.powerOnAll(targets)
             }
             completion()
@@ -546,6 +586,14 @@ public class DeviceManager: ObservableObject {
     private func handleMediaKey(_ key: MediaKeyEvent) -> Bool {
         guard let device = devices.first(where: { $0.enabled }) else { return false }
 
+        if softwareVolumeActive {
+            handleSoftwareVolumeKey(key)
+            return true
+        }
+        // The TV cannot change the volume and the Mac's sound is not going to
+        // a display (headphones, built-in speakers): the keys belong to macOS.
+        if tvCanAdjustVolume == false { return false }
+
         switch key {
         case .volumeUp:
             enqueueVolumeStep(+1, for: device)
@@ -638,6 +686,73 @@ public class DeviceManager: ObservableObject {
         }
     }
 
+    // MARK: - Software Volume (Mac-side, for fixed-level TV outputs)
+
+    public func setSoftwareVolumeEnabled(_ enabled: Bool) {
+        softwareVolumeEnabled = enabled
+        saveSettings()
+        syncSoftwareVolume()
+    }
+
+    /// Sets the slider level (0...1). Moving the slider also unmutes, like
+    /// the macOS volume slider does.
+    public func setSoftwareVolume(level: Double) {
+        softwareVolumeLevel = SoftwareVolume.clamp(level)
+        softwareVolumeMuted = false
+        saveSettings()
+        syncSoftwareVolume()
+    }
+
+    public func toggleSoftwareMute() {
+        softwareVolumeMuted.toggle()
+        saveSettings()
+        syncSoftwareVolume()
+    }
+
+    private func handleSoftwareVolumeKey(_ key: MediaKeyEvent) {
+        switch key {
+        case .volumeUp:
+            setSoftwareVolume(level: SoftwareVolume.stepped(softwareVolumeLevel, by: +1))
+        case .volumeDown:
+            setSoftwareVolume(level: SoftwareVolume.stepped(softwareVolumeLevel, by: -1))
+        case .mute:
+            toggleSoftwareMute()
+        }
+    }
+
+    /// Remembers whether the primary TV (the one the volume keys go to) can
+    /// change the volume. An unknown answer keeps the previous one.
+    private func noteVolumeAdjustable(_ adjustable: Bool?, for device: WebOSDevice) {
+        guard let adjustable = adjustable,
+              device.id == devices.first(where: { $0.enabled })?.id,
+              adjustable != tvCanAdjustVolume else { return }
+        tvCanAdjustVolume = adjustable
+        saveSettings()
+        syncSoftwareVolume()
+    }
+
+    /// Single place that decides whether the software volume is in charge and
+    /// pushes the current gain to the audio tap. Main thread.
+    private func syncSoftwareVolume() {
+        guard let controller = softwareVolumeController else { return }
+
+        let wanted = SoftwareVolume.shouldControl(
+            enabled: softwareVolumeEnabled,
+            tvCanAdjustVolume: tvCanAdjustVolume,
+            outputIsDigitalDisplay: SoftwareVolumeController.defaultOutputIsDigitalDisplay()
+        )
+        guard wanted else {
+            controller.stop()
+            softwareVolumeActive = false
+            return
+        }
+
+        let gain = SoftwareVolume.gain(forLevel: softwareVolumeLevel, muted: softwareVolumeMuted)
+        // If the tap cannot be built, hand the keys back to macOS rather
+        // than swallowing them with no effect.
+        softwareVolumeActive = controller.apply(gain: gain)
+    }
+
     // MARK: - Settings
 
     public func updateUserIdleSettings(enabled: Bool, timeout: TimeInterval) {
@@ -674,14 +789,20 @@ public class DeviceManager: ObservableObject {
     }
 
     private func saveSettings() {
-        let settings: [String: Any] = [
+        var settings: [String: Any] = [
             "userIdleEnabled": userIdleEnabled,
             "userIdleTimeout": userIdleTimeout,
             "mediaKeysEnabled": mediaKeysEnabled,
+            "softwareVolumeEnabled": softwareVolumeEnabled,
+            "softwareVolumeLevel": softwareVolumeLevel,
+            "softwareVolumeMuted": softwareVolumeMuted,
             "assertionAllowlist": assertionAllowlist.map {
                 ["bundleID": $0.bundleID, "name": $0.name]
             }
         ]
+        if let tvCanAdjustVolume = tvCanAdjustVolume {
+            settings["tvCanAdjustVolume"] = tvCanAdjustVolume
+        }
         userDefaults.set(settings, forKey: settingsKey)
     }
 
@@ -693,6 +814,10 @@ public class DeviceManager: ObservableObject {
         userIdleEnabled = settings["userIdleEnabled"] as? Bool ?? false
         userIdleTimeout = settings["userIdleTimeout"] as? TimeInterval ?? 300
         mediaKeysEnabled = settings["mediaKeysEnabled"] as? Bool ?? false
+        softwareVolumeEnabled = settings["softwareVolumeEnabled"] as? Bool ?? true
+        softwareVolumeLevel = SoftwareVolume.clamp(settings["softwareVolumeLevel"] as? Double ?? 1)
+        softwareVolumeMuted = settings["softwareVolumeMuted"] as? Bool ?? false
+        tvCanAdjustVolume = settings["tvCanAdjustVolume"] as? Bool
 
         if let raw = settings["assertionAllowlist"] as? [[String: String]] {
             assertionAllowlist = raw.compactMap { entry in

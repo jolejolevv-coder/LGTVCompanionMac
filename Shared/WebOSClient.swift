@@ -384,13 +384,18 @@ public class WebOSClient: ObservableObject {
 
     /// Current volume + mute state. Handles both webOS payload shapes
     /// (flat on older firmware, nested "volumeStatus" on webOS 5+).
-    public func getAudioStatus() async throws -> (volume: Int?, muted: Bool?) {
+    ///
+    /// `adjustable` is the TV's own statement whether it can change the volume
+    /// of the current sound output. It is false for fixed-level outputs such
+    /// as optical, where volumeUp/volumeDown/setVolume have no effect. Older
+    /// firmware does not report it (nil).
+    public func getAudioStatus() async throws -> (volume: Int?, muted: Bool?, adjustable: Bool?) {
         let response = try await request(uri: "ssap://audio/getVolume")
         let payload = response["payload"] as? [String: Any]
         if let vs = payload?["volumeStatus"] as? [String: Any] {
-            return (vs["volume"] as? Int, vs["muteStatus"] as? Bool)
+            return (vs["volume"] as? Int, vs["muteStatus"] as? Bool, vs["adjustVolume"] as? Bool)
         }
-        return (payload?["volume"] as? Int, payload?["muted"] as? Bool)
+        return (payload?["volume"] as? Int, payload?["muted"] as? Bool, nil)
     }
 
     public func setVolume(_ volume: Int) async throws {

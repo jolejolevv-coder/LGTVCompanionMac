@@ -87,6 +87,16 @@ struct SettingsView: View {
                 Text("Requires Accessibility permission (System Settings → Privacy & Security → Accessibility) so the Mac's own volume display doesn't react too.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Adjust the Mac's volume when the TV can't", isOn: Binding(
+                    get: { deviceManager.softwareVolumeEnabled },
+                    set: { deviceManager.setSoftwareVolumeEnabled($0) }
+                ))
+                .tint(.green)
+
+                Text("For speakers on the TV's optical output: the TV sends a fixed level there, so the keys lower the Mac's sound instead. Applies to Mac audio only. Requires the System Audio Recording permission (System Settings → Privacy & Security → Screen & System Audio Recording). If the Mac goes silent, grant that permission or switch this off.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } header: {
                 Text("Volume Keys")
             }

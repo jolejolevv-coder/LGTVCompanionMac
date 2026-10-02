@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "LGTVCompanion",
     platforms: [
-        .macOS(.v14)
+        // 14.2: first release with Core Audio process taps (software volume).
+        .macOS("14.2")
     ],
     products: [
         .executable(name: "LGTVCompanion", targets: ["LGTVCompanionApp"]),
@@ -34,6 +35,11 @@ let package = Package(
             dependencies: ["LGTVCompanionShared"],
             path: "Daemon",
             exclude: ["com.lgtvcompanion.daemon.plist"]
+        ),
+        .testTarget(
+            name: "LGTVCompanionSharedTests",
+            dependencies: ["LGTVCompanionShared"],
+            path: "Tests/LGTVCompanionSharedTests"
         )
     ]
 )

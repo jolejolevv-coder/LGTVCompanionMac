@@ -99,6 +99,48 @@ Falls dein TV nicht eingeschaltet werden kann:
    - **Target IP Address** (bei manchen Netzwerken besser)
    - **Subnet Directed Broadcast** (für spezielle Setups)
 
+## Lautstärke bei Lautsprechern am optischen Ausgang
+
+Hängen deine Lautsprecher am optischen Ausgang des TV, kann der TV die
+Lautstärke nicht regeln. Er gibt dort einen festen Pegel aus und meldet das
+selbst (`adjustVolume: false`). Die App erkennt das und regelt stattdessen den
+Ton des Mac, bevor er per HDMI zum TV geht.
+
+So verhält es sich:
+
+- Die Lautstärketasten ändern den Pegel in 16 Stufen, die Stummtaste schaltet
+  den Mac Ton stumm.
+- Der Slider im Menü der Menüleiste zeigt denselben Wert. Darunter steht
+  "Mac volume", solange dieser Modus aktiv ist.
+- Es wirkt nur auf den Ton des Mac. Eine Konsole an einem anderen HDMI Eingang
+  bleibt unverändert.
+- Bei 100 % greift die App gar nicht in den Ton ein.
+- Stellst du den TV auf seine eigenen Lautsprecher oder ARC um, gehen die
+  Tasten nach spätestens einer Minute wieder an den TV.
+- Läuft der Mac Ton über Kopfhörer oder die internen Lautsprecher, gehören die
+  Tasten macOS.
+
+Voraussetzungen: macOS 14.2 oder neuer und die Freigabe unter
+Systemeinstellungen → Datenschutz & Sicherheit → Bildschirm & Systemaudio
+aufnehmen. macOS fragt beim ersten Leiserstellen danach. Bleibt der Mac nach
+dem Leiserstellen stumm, fehlt diese Freigabe: erteile sie oder schalte die
+Funktion in den Settings unter Volume Keys ab. Lauter bis 100 % bringt den Ton
+ebenfalls sofort zurück.
+
+Tipp: Stell den Regler am Lautsprecher auf die lauteste Stufe, die du je
+brauchst, und regle den Rest per Tastatur. Sehr starke digitale Dämpfung kostet
+Auflösung.
+
+Manuelle Abnahme nach Änderungen am Audio Pfad:
+
+1. Musik auf dem Mac starten, TV Tonausgang auf optisch.
+2. Leiser drücken: Pegel sinkt ohne Knacken, kein Overlay von macOS, kein Echo.
+3. Stummtaste: Ton aus, erneut drücken: alter Pegel.
+4. Slider im Menü bewegen: Pegel folgt sofort.
+5. App beenden, während gedämpft wird: Ton springt auf vollen Pegel zurück.
+6. App neu starten: der zuletzt eingestellte Pegel gilt wieder.
+7. Kopfhörer als Ausgabegerät wählen: Tasten regeln wieder macOS.
+
 ## Fehlerbehebung
 
 ### TV schaltet sich nicht ein

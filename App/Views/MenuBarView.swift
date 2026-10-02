@@ -82,6 +82,21 @@ struct DeviceMenuSection: View {
 
     private var status: DeviceStatus? { deviceManager.deviceStatuses[device.id] }
 
+    /// True when this row's volume controls drive the Mac-side software
+    /// volume instead of the TV. Only the primary TV (the one the volume
+    /// keys go to) can be in that mode.
+    private var usesSoftwareVolume: Bool {
+        deviceManager.softwareVolumeActive
+            && deviceManager.devices.first(where: \.enabled)?.id == device.id
+    }
+
+    private var softwareVolumePercent: Binding<Double> {
+        Binding(
+            get: { (deviceManager.softwareVolumeLevel * 100).rounded() },
+            set: { deviceManager.setSoftwareVolume(level: $0 / 100) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header: name + status
@@ -116,25 +131,10 @@ struct DeviceMenuSection: View {
             }
 
             // Volume
-            HStack(spacing: 8) {
-                Button {
-                    run { try await deviceManager.setMute(!(status?.muted ?? false), for: device)
-                          await deviceManager.refreshStatus(for: device) }
-                } label: {
-                    Image(systemName: (status?.muted ?? false) ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                }
-                .buttonStyle(.borderless)
-
-                Slider(value: $volume, in: 0...100, step: 1) { editing in
-                    if !editing {
-                        run { try await deviceManager.setVolume(Int(volume), for: device) }
-                    }
-                }
-                .disabled(!(status?.isReachable ?? false))
-
-                Text("\(Int(volume))")
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 24, alignment: .trailing)
+            if usesSoftwareVolume {
+                softwareVolumeRow
+            } else {
+                tvVolumeRow
             }
 
             // Inputs
@@ -161,6 +161,55 @@ struct DeviceMenuSection: View {
         }
         .onAppear {
             if let v = status?.volume { volume = Double(v); hasVolume = true }
+        }
+    }
+
+    /// Volume on the TV itself (TV speakers, ARC).
+    private var tvVolumeRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                run { try await deviceManager.setMute(!(status?.muted ?? false), for: device)
+                      await deviceManager.refreshStatus(for: device) }
+            } label: {
+                Image(systemName: (status?.muted ?? false) ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            }
+            .buttonStyle(.borderless)
+
+            Slider(value: $volume, in: 0...100, step: 1) { editing in
+                if !editing {
+                    run { try await deviceManager.setVolume(Int(volume), for: device) }
+                }
+            }
+            .disabled(!(status?.isReachable ?? false))
+
+            Text("\(Int(volume))")
+                .font(.caption.monospacedDigit())
+                .frame(width: 24, alignment: .trailing)
+        }
+    }
+
+    /// Volume of the Mac's sound, for TV outputs with a fixed level (optical).
+    /// Local, so it follows the slider live and works while the TV is busy.
+    private var softwareVolumeRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Button {
+                    deviceManager.toggleSoftwareMute()
+                } label: {
+                    Image(systemName: deviceManager.softwareVolumeMuted
+                          ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                }
+                .buttonStyle(.borderless)
+
+                Slider(value: softwareVolumePercent, in: 0...100)
+
+                Text("\(Int(softwareVolumePercent.wrappedValue))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 24, alignment: .trailing)
+            }
+            Text("Mac volume. The TV's sound output has a fixed level.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 

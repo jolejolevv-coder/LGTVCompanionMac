@@ -53,7 +53,9 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>14.2</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>LGTV Companion adjusts the volume of your Mac's sound when the TV cannot do it itself, for example with speakers on the TV's optical output.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
