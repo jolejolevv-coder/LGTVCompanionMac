@@ -11,7 +11,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var deviceManager: DeviceManager
-    @ObservedObject private var speakers = DeviceManager.shared.speakers
     
     @State private var userIdleEnabled: Bool
     @State private var userIdleTimeout: Double
@@ -42,6 +41,12 @@ struct SettingsView: View {
             automationSettingsTab
                 .tabItem {
                     Label("Automation", systemImage: "bolt")
+                }
+
+            SpeakerSettingsTab(speakers: DeviceManager.shared.speakers,
+                               automation: DeviceManager.shared.speakerAutomation)
+                .tabItem {
+                    Label("Speakers", systemImage: "hifispeaker.2")
                 }
             
             aboutTab
@@ -100,30 +105,6 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Volume Keys")
-            }
-
-            Section {
-                Toggle("Control Edifier speakers over Bluetooth", isOn: Binding(
-                    get: { speakers.isEnabled },
-                    set: { speakers.setEnabled($0) }
-                ))
-                .tint(.green)
-
-                Text("For Edifier M90: the volume keys change the speakers' own volume and the menu bar gets a Sub Out switch (Low, Medium, High). The speakers allow one Bluetooth client at a time, so the Edifier phone app cannot connect while this app is; the app disconnects after 20 seconds without use. If the speakers are unreachable, the keys fall back to the Mac volume above.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if speakers.isEnabled {
-                    LabeledContent("Status") {
-                        Text(speakerStatusText)
-                            .foregroundStyle(.secondary)
-                    }
-                    if speakers.hasKnownSpeaker {
-                        Button("Forget Speakers") { speakers.forgetSpeaker() }
-                    }
-                }
-            } header: {
-                Text("Speakers")
             }
 
             Section {
@@ -284,16 +265,6 @@ struct SettingsView: View {
     
     // MARK: - Helpers
 
-    private var speakerStatusText: String {
-        let name = speakers.deviceName ?? "Edifier speakers"
-        switch speakers.state {
-        case .connected: return "\(name), connected"
-        case .connecting: return "Searching…"
-        case .unavailable: return "Not reachable"
-        case .idle: return speakers.hasKnownSpeaker ? "\(name), standby" : "Not connected yet"
-        }
-    }
-    
     private func loadSettings() {
         userIdleEnabled = deviceManager.userIdleEnabled
         userIdleTimeout = deviceManager.userIdleTimeout

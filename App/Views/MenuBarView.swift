@@ -29,7 +29,7 @@ struct MenuBarView: View {
             }
 
             if speakers.isEnabled {
-                SpeakerMenuSection(speakers: speakers)
+                SpeakerMenuSection(speakers: speakers, automation: deviceManager.speakerAutomation)
             }
 
             MenuCard {
@@ -237,7 +237,15 @@ struct DeviceMenuSection: View {
 
 struct SpeakerMenuSection: View {
     @ObservedObject var speakers: EdifierSpeakerController
+    @ObservedObject var automation: SpeakerAutomation
     @State private var sliderVolume: Double = 0
+
+    /// Six sound choices, three per row.
+    private static let soundColumns = 3
+
+    private var volumeCeiling: Int {
+        min(speakers.maxVolume, speakers.volumeLimit ?? speakers.maxVolume)
+    }
 
     var body: some View {
         MenuCard {
@@ -253,7 +261,11 @@ struct SpeakerMenuSection: View {
                 isEnabled: speakers.volume != nil,
                 accessibilityLabel: "Speaker volume",
                 onToggleMute: { speakers.toggleMute() },
-                onCommit: { speakers.setVolume(Int(sliderVolume)) }
+                onCommit: {
+                    speakers.setVolume(Int(sliderVolume))
+                    // Night mode caps the volume; show what was really set.
+                    sliderVolume = min(sliderVolume, Double(volumeCeiling))
+                }
             )
 
             VStack(alignment: .leading, spacing: 6) {
@@ -265,6 +277,51 @@ struct SpeakerMenuSection: View {
                     isEnabled: speakers.subOut != nil,
                     onSelect: { speakers.setSubOut($0) }
                 )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                MenuCaption(text: "Sound")
+                CapsulePicker(
+                    options: SpeakerSoundLibrary.menuOrder,
+                    selection: automation.currentSound,
+                    label: { SpeakerSoundLibrary.name(of: $0) },
+                    isEnabled: speakers.eqPreset != nil,
+                    columns: Self.soundColumns,
+                    onSelect: { automation.selectSound($0) }
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                MenuCaption(text: "Input")
+                CapsulePicker(
+                    options: EdifierInput.allCases,
+                    selection: speakers.input,
+                    label: { $0.shortLabel },
+                    isEnabled: speakers.input != nil,
+                    onSelect: { speakers.setInput($0) }
+                )
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "moon.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(automation.nightModeActive ? Color.indigo : Color.secondary)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Night mode")
+                        .font(.system(size: 12))
+                    Text("Sub \(automation.nightSubOut.label), volume up to \(automation.nightVolumeLimit)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("Night mode", isOn: Binding(
+                    get: { automation.nightModeActive },
+                    set: { automation.setNightMode($0) }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
             }
 
             if speakers.state == .unavailable {

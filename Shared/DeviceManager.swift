@@ -65,6 +65,8 @@ public class DeviceManager: ObservableObject {
     /// Bluetooth control of Edifier speakers (real volume, Sub Out). Idle
     /// until switched on in Settings.
     public let speakers = EdifierSpeakerController()
+    /// Sound selection, night mode and wake behavior of the speakers.
+    public private(set) lazy var speakerAutomation = SpeakerAutomation(speakers: speakers)
 
     /// Apps allowed to keep the TV on while they hold a display-sleep
     /// assertion (i.e. while playing video). Persisted by bundle ID so the
@@ -117,6 +119,12 @@ public class DeviceManager: ObservableObject {
         speakers.onVolumeKnown = { [weak self] in
             self?.handOverSoftwareVolumeToSpeakers()
         }
+        speakers.onReply = { [weak self] reply in
+            self?.speakerAutomation.speakersReported(reply)
+        }
+        // Created now rather than on first use, so the night schedule runs
+        // from launch.
+        _ = speakerAutomation
         // Only auto-start when the permission is already there — otherwise
         // macOS would show the Accessibility prompt on every launch.
         if mediaKeysEnabled && MediaKeyMonitor.hasAccessibilityPermission {
@@ -487,6 +495,7 @@ public class DeviceManager: ObservableObject {
                 await MainActor.run {
                     self.softwareVolumeController?.stop()
                     self.syncSoftwareVolume()
+                    self.speakerAutomation.macDidWake()
                 }
                 await self.powerOnAll(targets)
             }

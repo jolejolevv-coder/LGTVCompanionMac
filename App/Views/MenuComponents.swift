@@ -262,29 +262,47 @@ struct CapsulePicker<Option: Hashable>: View {
     let selection: Option?
     let label: (Option) -> String
     var isEnabled = true
+    /// Capsules per row. nil puts all options into a single row.
+    var columns: Int?
     let onSelect: (Option) -> Void
 
+    private static var spacing: CGFloat { 6 }
+
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(options, id: \.self) { option in
-                let isSelected = option == selection
-                Button {
-                    onSelect(option)
-                } label: {
-                    Text(label(option))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.black : Color.primary)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
-                        .background(isSelected ? Color.white : Color.primary.opacity(0.1), in: Capsule())
-                        .contentShape(Capsule())
+        Group {
+            if let columns = columns {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Self.spacing), count: columns),
+                          spacing: Self.spacing) {
+                    capsules
                 }
-                .buttonStyle(PressableStyle())
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            } else {
+                HStack(spacing: Self.spacing) {
+                    capsules
+                }
             }
         }
         .opacity(isEnabled ? 1 : 0.4)
         .allowsHitTesting(isEnabled)
+    }
+
+    private var capsules: some View {
+        ForEach(options, id: \.self) { option in
+            let isSelected = option == selection
+            Button {
+                onSelect(option)
+            } label: {
+                Text(label(option))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.black : Color.primary)
+                    .lineLimit(1)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity)
+                    .background(isSelected ? Color.white : Color.primary.opacity(0.1), in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+        }
     }
 }
 

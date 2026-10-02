@@ -32,6 +32,12 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     @Published public private(set) var maxVolume = EdifierProtocol.defaultMaxVolume
     @Published public private(set) var subOut: EdifierSubOutLevel?
     @Published public private(set) var deviceName: String?
+    @Published public private(set) var input: EdifierInput?
+    @Published public private(set) var eqPreset: EdifierEQPreset?
+    /// Gains of the Custom slot in dB, one per band.
+    @Published public private(set) var customEQ: [Double]?
+    /// Upper bound applied to every volume change while set (night mode).
+    @Published public private(set) var volumeLimit: Int?
     /// True while the mute key has turned the volume down to zero.
     @Published public private(set) var isMuted = false
 
@@ -39,6 +45,17 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     public var onKeyVolumeChanged: ((Double, Bool) -> Void)?
     /// Called once per connection, as soon as the speaker's volume is known.
     public var onVolumeKnown: (() -> Void)?
+    /// Called after a value the speaker reported was taken over, with the
+    /// reply it came from. Lets the caller react to exactly that fresh value
+    /// instead of to cached ones.
+    public var onReply: ((EdifierReply) -> Void)?
+
+    /// True while a multi-frame change (an EQ curve) is still being sent. A
+    /// state read during that time can show a half-written curve.
+    public var hasPendingWrites: Bool {
+        !pendingFrames.isEmpty || framesInFlight > 0
+    }
+    private var framesInFlight = 0
 
     /// Volume units per key press. The speaker has 50 steps; 2 per press
     /// gives 25 presses for the full range, fine enough for a volume knob.
@@ -51,6 +68,12 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     /// After a failed attempt, leave the volume keys to the fallback for this
     /// long instead of stalling on every key press.
     private static let retryPauseSeconds: TimeInterval = 60
+    /// Gap between frames of a multi-frame change (nine EQ bands). The
+    /// speaker drops writes that arrive back to back.
+    private static let frameSpacingSeconds: TimeInterval = 0.08
+    /// The speaker needs a moment after an input switch before it reports
+    /// the new input; an immediate query still returns the old one.
+    private static let inputSettleSeconds: TimeInterval = 3
 
     private static let enabledKey = "lgtvcompanion.speakers.enabled"
     private static let peripheralKey = "lgtvcompanion.speakers.peripheral"
@@ -74,6 +97,9 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     private var keyFeedbackPending = false
     private var pendingVolume: Int?
     private var pendingSubOut: EdifierSubOutLevel?
+    /// Frames queued by setInput / setEQPreset / applyEQCurve while not yet
+    /// connected. Each entry is sent in order with spacing.
+    private var pendingFrames: [Data] = []
     private var volumeBeforeMute: Int?
     private var announcedVolume = false
 
@@ -162,6 +188,61 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         applyPending()
     }
 
+    public func setInput(_ newInput: EdifierInput) {
+        input = newInput
+        enqueue([EdifierProtocol.setInput(newInput)])
+        // Confirm once the speaker has settled on the new input.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputSettleSeconds) { [weak self] in
+            guard let self = self, self.state == .connected else { return }
+            self.send(EdifierProtocol.queryInput())
+        }
+    }
+
+    public func setEQPreset(_ preset: EdifierEQPreset) {
+        eqPreset = preset
+        enqueue([EdifierProtocol.setEQPreset(preset), EdifierProtocol.queryEQPreset()])
+    }
+
+    /// Writes all bands into the speakers' Custom slot and selects it. The
+    /// bands only take effect while Custom is selected, so it is selected
+    /// first. Reads both back afterwards.
+    public func applyEQCurve(_ gains: [Double]) {
+        let snapped = gains.map(EdifierProtocol.snappedGain)
+        var frames = [EdifierProtocol.setEQPreset(.custom)]
+        for (index, gain) in snapped.enumerated() {
+            guard let frame = EdifierProtocol.setEQBand(index: index, gainDB: gain) else { continue }
+            frames.append(frame)
+        }
+        frames += [EdifierProtocol.queryEQPreset(), EdifierProtocol.queryCustomEQ()]
+
+        eqPreset = .custom
+        customEQ = snapped
+        enqueue(frames)
+    }
+
+    /// Changes one band of the Custom slot (the equalizer sliders).
+    public func setEQBand(index: Int, gainDB: Double) {
+        guard var gains = customEQ, gains.indices.contains(index),
+              let frame = EdifierProtocol.setEQBand(index: index, gainDB: gainDB) else { return }
+        gains[index] = EdifierProtocol.snappedGain(gainDB)
+        customEQ = gains
+        enqueue([frame])
+    }
+
+    /// Caps the volume (nil removes the cap). A volume above the new cap is
+    /// lowered right away.
+    public func setVolumeLimit(_ limit: Int?) {
+        volumeLimit = limit
+        guard let limit = limit, let current = volume, current > limit else { return }
+        setVolume(limit)
+    }
+
+    private func enqueue(_ frames: [Data]) {
+        pendingFrames += frames
+        connectIfNeeded()
+        applyPending()
+    }
+
     // MARK: - Connection
 
     private func connectIfNeeded() {
@@ -227,6 +308,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         keyFeedbackPending = false
         pendingVolume = nil
         pendingSubOut = nil
+        pendingFrames = []
         retryNotBefore = Date().addingTimeInterval(Self.retryPauseSeconds)
         cancelTimers()
         resetConnection(to: .unavailable)
@@ -271,12 +353,33 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         send(EdifierProtocol.queryVolume())
         send(EdifierProtocol.querySubOut())
         send(EdifierProtocol.queryName())
+        send(EdifierProtocol.queryInput())
+        send(EdifierProtocol.queryEQPreset())
+        send(EdifierProtocol.queryCustomEQ())
+    }
+
+    private func sendSpaced(_ frames: [Data]) {
+        framesInFlight += frames.count
+        for (position, frame) in frames.enumerated() {
+            let delay = Double(position) * Self.frameSpacingSeconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self else { return }
+                self.framesInFlight -= 1
+                self.send(frame)
+            }
+        }
     }
 
     /// Sends whatever the user asked for while not yet connected, or just now.
     /// Volume changes wait until the speaker told us its current volume.
     private func applyPending() {
         guard state == .connected else { return }
+
+        if !pendingFrames.isEmpty {
+            let frames = pendingFrames
+            pendingFrames = []
+            sendSpaced(frames)
+        }
 
         if let level = pendingSubOut {
             pendingSubOut = nil
@@ -328,7 +431,8 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     }
 
     private func writeVolume(_ newVolume: Int) {
-        let clamped = min(max(newVolume, 0), maxVolume)
+        let ceiling = min(maxVolume, volumeLimit ?? maxVolume)
+        let clamped = min(max(newVolume, 0), ceiling)
         send(EdifierProtocol.setVolume(clamped, maximum: maxVolume))
         volume = clamped
     }
@@ -348,9 +452,16 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
             subOut = level
         case .name(let name):
             deviceName = name
+        case .input(let reported):
+            input = reported
+        case .eqPreset(let preset):
+            eqPreset = preset
+        case .customEQ(let gains):
+            customEQ = gains
         case .other:
-            break
+            return
         }
+        onReply?(reply)
     }
 }
 

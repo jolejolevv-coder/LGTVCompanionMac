@@ -141,6 +141,26 @@ Manuelle Abnahme nach Änderungen am Audio Pfad:
 6. App neu starten: der zuletzt eingestellte Pegel gilt wieder.
 7. Kopfhörer als Ausgabegerät wählen: Tasten regeln wieder macOS.
 
+## Edifier Lautsprecher: Klang, Eingang, Nachtmodus
+
+Einschalten unter Settings, Tab Speakers. Danach zeigt das Menü in der
+Menüleiste eine Karte für die Lautsprecher.
+
+- **Sound:** Classic, Monitor und Dynamic sind in den Lautsprechern eingebaut.
+  Techno, Hip-Hop und My EQ schreibt die App in den freien Platz der
+  Lautsprecher.
+- **Equalizer:** Im Tab Speakers gibt es neun Regler für My EQ, je Band von
+  minus 3 bis plus 3 dB. Ein Regler, den du bewegst, schaltet auf My EQ um.
+- **Input:** Bluetooth, USB, HDMI, Optisch, AUX.
+- **Night mode:** Deckelt die Lautstärke und setzt den Subwoofer herunter.
+  Grenze, Sub Pegel und ein Zeitplan lassen sich im Tab Speakers einstellen.
+  Ausschalten hebt die Grenze auf und stellt den alten Sub Pegel wieder her.
+- **Beim Aufwachen:** Auf Wunsch stellt die App den Eingang der Lautsprecher
+  nach dem Aufwachen des Mac auf den gewählten Eingang.
+
+Solange der Mac verbunden ist, erreicht die Handy App die Lautsprecher nicht.
+Die App trennt 20 Sekunden nach der letzten Benutzung.
+
 ## Fehlerbehebung
 
 ### TV schaltet sich nicht ein
