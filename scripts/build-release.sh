@@ -68,8 +68,18 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-echo "==> Ad-hoc code signing…"
-codesign --force -s - "$APP"
+# Sign with the local certificate when it exists (see
+# scripts/create-signing-cert.sh): a stable identity keeps the Accessibility
+# and System Audio permissions valid across updates. Without it (CI, a fresh
+# Mac) fall back to ad-hoc, which works but loses both grants on every build.
+SIGN_IDENTITY="${LGTV_SIGN_IDENTITY:-LGTV Companion Local Signing}"
+if security find-identity -p codesigning | grep -q "\"$SIGN_IDENTITY\""; then
+    echo "==> Code signing with \"$SIGN_IDENTITY\"…"
+    codesign --force -s "$SIGN_IDENTITY" "$APP"
+else
+    echo "==> Ad-hoc code signing (no local certificate found)…"
+    codesign --force -s - "$APP"
+fi
 
 echo "==> Creating DMG…"
 hdiutil create -volname "$APP_NAME" -srcfolder "$APP" -ov -format UDZO \

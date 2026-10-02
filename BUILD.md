@@ -226,3 +226,35 @@ Alle Views haben Preview-Provider. Nutze diese für schnelles UI-Prototyping:
 - [Apple Network Framework](https://developer.apple.com/documentation/network)
 - [IOKit Power Management](https://developer.apple.com/documentation/iokit/iopwr_mgt)
 - [Original Windows Version](https://github.com/JPersson77/LGTVCompanion)
+
+## Lokale Signatur
+
+macOS bindet die Freigaben für Bedienungshilfen und System Audio an die
+Signatur der App. Eine ad hoc Signatur ändert sich mit jedem Build, deshalb
+gingen beide Freigaben nach jedem Update verloren.
+
+Einmal pro Mac ausführen:
+
+```bash
+./scripts/create-signing-cert.sh
+```
+
+Das legt ein selbst signiertes Zertifikat `LGTV Companion Local Signing` im
+Anmelde Schlüsselbund an. `scripts/build-release.sh` signiert damit, sobald es
+vorhanden ist. Beim ersten Build fragt macOS, ob `codesign` den Schlüssel
+benutzen darf: "Immer erlauben" wählen.
+
+Die Freigaben hängen danach am Zertifikat statt am einzelnen Build und bleiben
+über Updates gültig. Prüfen lässt sich das so:
+
+```bash
+codesign -d -r- "/Applications/LGTV Companion.app"
+```
+
+Die Ausgabe muss `certificate leaf = H"..."` enthalten. Steht dort `cdhash`,
+ist die App ad hoc signiert.
+
+Grenzen: Das Zertifikat gilt nur auf diesem Mac und ersetzt keine Developer ID.
+Für die Weitergabe an andere bleibt Gatekeeper im Weg. Ohne Zertifikat (CI,
+frischer Mac) signiert das Skript weiter ad hoc. Wird das Zertifikat gelöscht
+und neu erzeugt, müssen die Freigaben einmal neu gesetzt werden.
