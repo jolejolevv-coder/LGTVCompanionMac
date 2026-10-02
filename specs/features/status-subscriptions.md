@@ -29,7 +29,7 @@ Probe am 02.10.2026 gegen den TV des Nutzers: Abos auf `audio/getVolume`,
       (Testprogramm, 02.10.2026).
 - [x] Nach jedem neuen Verbindungsaufbau wird neu abonniert (Abos hängen am
       Registrieren).
-- [ ] In der App gesehen: Eine Änderung am TV erscheint ohne Wartezeit im Menü.
+- [x] In der App vom Nutzer abgenommen (02.10.2026).
 
 ## Implementation plan
 Phase 1: `WebOSClient`: Abos nach `registered` senden, Nachrichten mit den
