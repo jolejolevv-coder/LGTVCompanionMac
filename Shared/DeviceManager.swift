@@ -78,8 +78,8 @@ public class DeviceManager: ObservableObject {
     private var mediaKeyMonitor: MediaKeyMonitor?
     private var keepaliveTimer: Timer?
 
-    /// nil in the daemon: two processes tapping the system audio at once
-    /// would each mute and replay it.
+    /// nil unless explicitly enabled. Only one process may tap the system
+    /// audio: two taps would each mute and replay it.
     private let softwareVolumeController: SoftwareVolumeController?
     /// Last answer of the primary TV to "can you change the volume?".
     /// Persisted so a restart does not play at full level until the first

@@ -11,7 +11,6 @@ let package = Package(
     ],
     products: [
         .executable(name: "LGTVCompanion", targets: ["LGTVCompanionApp"]),
-        .executable(name: "LGTVCompanionDaemon", targets: ["LGTVCompanionDaemon"]),
         .library(name: "LGTVCompanionShared", targets: ["LGTVCompanionShared"])
     ],
     dependencies: [],
@@ -29,12 +28,6 @@ let package = Package(
                 .copy("Resources/AppIcon.icns"),
                 .copy("Resources/AppIcon.png")
             ]
-        ),
-        .executableTarget(
-            name: "LGTVCompanionDaemon",
-            dependencies: ["LGTVCompanionShared"],
-            path: "Daemon",
-            exclude: ["com.lgtvcompanion.daemon.plist"]
         ),
         .testTarget(
             name: "LGTVCompanionSharedTests",

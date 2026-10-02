@@ -28,7 +28,7 @@ struct LGTVCompanionApp: App {
                     NSApplication.shared.orderFrontStandardAboutPanel(
                         options: [
                             .applicationName: "LGTV Companion",
-                            .applicationVersion: "1.0.0",
+                            .applicationVersion: AppInfo.version,
                             .version: "macOS",
                             .credits: NSAttributedString(string: "Control your LG WebOS TV from your Mac\nMade by Nahobino")
                         ]

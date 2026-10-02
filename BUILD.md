@@ -1,237 +1,65 @@
-# LGTV Companion für macOS - Build-Anleitung
+# LGTV Companion für macOS: Bauen und Installieren
+
+Das Projekt ist ein Swift Package. Es gibt kein Xcode Projekt, gebaut wird auf
+der Kommandozeile.
 
 ## Voraussetzungen
 
-- macOS 13.0 (Ventura) oder neuer
-- Xcode 15.0 oder neuer
+- macOS 14.2 oder neuer (Core Audio Process Taps für das Software Volume)
+- Xcode 15.2 oder neuer, oder die passenden Command Line Tools
 - Swift 5.9 oder neuer
 
-## Projektstruktur
+## Aufbau
 
 ```
-LGTVCompanionMac/
-├── App/                        # Haupt-SwiftUI-Anwendung
-│   ├── LGTVCompanionApp.swift # App-Entry-Point
-│   └── Views/                 # UI-Views
-│       ├── ContentView.swift
-│       ├── DeviceDetailView.swift
-│       ├── DeviceScannerView.swift
-│       ├── AddDeviceView.swift
-│       └── SettingsView.swift
-├── Daemon/                    # Hintergrund-Daemon
-│   ├── main.swift
-│   └── com.lgtvcompanion.daemon.plist
-├── Shared/                    # Gemeinsame Logik
-│   ├── WebOSClient.swift     # WebOS API Client
-│   ├── WakeOnLAN.swift       # Wake-on-LAN
-│   ├── DeviceDiscovery.swift # Netzwerk-Scanner
-│   ├── PowerEventMonitor.swift # macOS Power Events
-│   └── DeviceManager.swift   # Geräte-Verwaltung
-└── README.md
+App/                    SwiftUI App: Fenster, Menü in der Menüleiste, Anzeige
+  Views/                einzelne Ansichten und Bausteine des Menüs
+  Resources/            App Icon
+Shared/                 Logik ohne Oberfläche (Bibliothek LGTVCompanionShared)
+Tests/                  Tests der Bibliothek
+scripts/                Build und Signatur
+specs/features/         Spezifikation je Feature
 ```
 
-## Xcode-Projekt erstellen
-
-### Schritt 1: Neues Projekt erstellen
-
-1. Öffne Xcode
-2. Erstelle ein neues Projekt: **File → New → Project**
-3. Wähle **macOS → App**
-4. Projekteinstellungen:
-   - Product Name: `LGTV Companion`
-   - Team: Dein Development Team
-   - Organization Identifier: `com.lgtvcompanion`
-   - Interface: SwiftUI
-   - Language: Swift
-   - Use Core Data: Nein
-   - Include Tests: Optional
-
-### Schritt 2: Dateien hinzufügen
-
-1. Lösche die automatisch erstellte `ContentView.swift`
-2. Erstelle folgende Ordnerstruktur im Projekt:
-   - `Views` (Group)
-   - `Shared` (Group)
-3. Füge alle Dateien aus diesem Repository zur entsprechenden Group hinzu
-
-### Schritt 3: Daemon-Target erstellen
-
-1. **File → New → Target**
-2. Wähle **macOS → Command Line Tool**
-3. Product Name: `LGTV Companion Daemon`
-4. Language: Swift
-5. Füge `Daemon/main.swift` zum Daemon-Target hinzu
-6. Füge alle Files aus `Shared/` zu **beiden** Targets hinzu (App und Daemon)
-
-### Schritt 4: Build Settings konfigurieren
-
-#### Für beide Targets:
-
-**Deployment Target:**
-- macOS 13.0 oder höher
-
-**Signing & Capabilities:**
-- Aktiviere "Hardened Runtime"
-- Füge folgende Capabilities hinzu:
-  - Network (Client/Server)
-  - Outgoing Connections (Client)
-
-**Info.plist Einträge (nur Main App):**
-
-```xml
-<key>NSLocalNetworkUsageDescription</key>
-<string>LGTV Companion needs access to your local network to discover and control your LG WebOS TV.</string>
-
-<key>NSBonjourServices</key>
-<array>
-    <string>_webos._tcp</string>
-</array>
-
-<key>LSUIElement</key>
-<false/>
-```
-
-### Schritt 5: Dependencies linken
-
-Beide Targets benötigen:
-- `Foundation.framework`
-- `Network.framework`
-- `IOKit.framework`
-- `ServiceManagement.framework` (für Launch at Login)
-
-### Schritt 6: Daemon als Login Item einbetten
-
-1. Im Main App Target, gehe zu **Build Phases**
-2. Füge eine neue **Copy Files** Phase hinzu:
-   - Destination: `Wrapper`
-   - Subpath: `Contents/Library/LoginItems`
-   - Füge `LGTV Companion Daemon.app` hinzu
-
-## Build & Run
-
-### Entwicklung
-
-1. Wähle das **LGTV Companion** Scheme
-2. Drücke **⌘R** zum Builden und Starten
-
-### Daemon testen
-
-Der Daemon startet automatisch, wenn Launch at Login aktiviert wird. Zum manuellen Testen:
+## Bauen und Installieren
 
 ```bash
-# Daemon-Binary direkt starten
-./DerivedData/.../LGTV\ Companion\ Daemon
-
-# Logs ansehen
-tail -f /tmp/com.lgtvcompanion.daemon.log
+./scripts/build-release.sh
 ```
 
-### Production Build
-
-1. Wähle **Product → Archive**
-2. Exportiere die App mit **Developer ID** Signierung
-3. Distribuiere über:
-   - Direct Download
-   - Mac App Store (benötigt zusätzliche Anpassungen)
-   - Homebrew Cask
-
-## Code-Signierung
-
-Für Distribution außerhalb des App Stores:
+Das Skript baut die Release Version, legt `build/LGTV Companion.app` samt
+`Info.plist` an, signiert sie und erzeugt ein DMG. Installieren:
 
 ```bash
-# App signieren
-codesign --deep --force --verify --verbose \
-  --sign "Developer ID Application: Your Name" \
-  "LGTV Companion.app"
-
-# Notarisierung
-xcrun notarytool submit LGTV\ Companion.zip \
-  --apple-id your@email.com \
-  --team-id TEAMID \
-  --password app-specific-password \
-  --wait
-
-# Staple
-xcrun stapler staple "LGTV Companion.app"
+cp -r "build/LGTV Companion.app" /Applications/
 ```
 
-## Fehlerbehebung
+Läuft die App schon, vorher beenden und die alte Version ersetzen.
 
-### "Cannot find type 'NWProtocolWebSocket' in scope"
+Die Versionsnummer steht an genau einer Stelle: `VERSION` in
+`scripts/build-release.sh`. Die App liest sie aus ihrer `Info.plist`.
 
-WebSocket-Support in Network.framework ist verfügbar ab macOS 13.0.
-Stelle sicher, dass dein Deployment Target mindestens 13.0 ist.
-
-### Daemon startet nicht
-
-1. Überprüfe die Logs: `cat /tmp/com.lgtvcompanion.daemon.log`
-2. Stelle sicher, dass der Daemon korrekt in der App eingebettet ist
-3. Prüfe die Berechtigungen: `ls -la /Applications/LGTV\ Companion.app/Contents/Library/LoginItems/`
-
-### TV wird nicht gefunden
-
-1. Stelle sicher, dass TV und Mac im gleichen Netzwerk sind
-2. Aktiviere "Local Network" Berechtigung in Systemeinstellungen
-3. Prüfe Firewall-Einstellungen
-
-### Wake-on-LAN funktioniert nicht
-
-1. Aktiviere "Turn on via WiFi" in den TV-Einstellungen
-2. Verwende eine statische IP-Adresse für den TV
-3. Teste verschiedene WOL-Methoden im DeviceDetailView
-
-## Entwicklungs-Tipps
-
-### Live-Logging aktivieren
-
-```swift
-// In DeviceManager.swift
-private func handlePowerEvent(_ event: PowerEvent) {
-    print("Power event: \(event)")  // Debug-Log
-    // ...
-}
-```
-
-### SwiftUI Previews nutzen
-
-Alle Views haben Preview-Provider. Nutze diese für schnelles UI-Prototyping:
+## Entwickeln
 
 ```bash
-⌥⌘P - Preview aktivieren
-⌥⌘↵ - Preview im Canvas zeigen
+swift build          # Debug Build
+swift test           # Tests
+swift run LGTVCompanion
 ```
 
-### Debugging
+`swift run` startet ohne App Bundle. Dann fehlen `Info.plist` und damit die
+Texte für die Freigaben von macOS: Bluetooth und System Audio funktionieren so
+nicht. Für diese Funktionen immer das Bundle aus `build-release.sh` nehmen.
 
-1. Setze Breakpoints in Power Event Handlers
-2. Nutze `po` im LLDB Debugger:
-   ```
-   po deviceManager.devices
-   po client.isConnected
-   ```
-
-## Nächste Schritte
-
-- [ ] App Icon hinzufügen (Assets.xcassets)
-- [ ] Lokalisierung (Deutsch, Englisch)
-- [ ] Crash Reporting integrieren
-- [ ] Automatische Updates (Sparkle Framework)
-- [ ] Mehr TV-Befehle hinzufügen (Volume, Input, etc.)
-- [ ] Menu Bar App Option
-
-## Ressourcen
-
-- [LG WebOS API Dokumentation](https://github.com/chros73/pywebostv)
-- [Apple Network Framework](https://developer.apple.com/documentation/network)
-- [IOKit Power Management](https://developer.apple.com/documentation/iokit/iopwr_mgt)
-- [Original Windows Version](https://github.com/JPersson77/LGTVCompanion)
+Die CI (`.github/workflows/build.yml`) führt bei jedem Push die Tests aus, baut
+und hängt das DMG als Artefakt an. Ein Tag `v*` erzeugt ein Release.
 
 ## Lokale Signatur
 
-macOS bindet die Freigaben für Bedienungshilfen und System Audio an die
-Signatur der App. Eine ad hoc Signatur ändert sich mit jedem Build, deshalb
-gingen beide Freigaben nach jedem Update verloren.
+macOS bindet die Freigaben für Bedienungshilfen, System Audio und Bluetooth
+sowie den Zugriff auf den Schlüsselbund an die Signatur der App. Eine ad hoc
+Signatur ändert sich mit jedem Build, die Freigaben gingen dann nach jedem
+Update verloren.
 
 Einmal pro Mac ausführen:
 
@@ -244,8 +72,7 @@ Anmelde Schlüsselbund an. `scripts/build-release.sh` signiert damit, sobald es
 vorhanden ist. Beim ersten Build fragt macOS, ob `codesign` den Schlüssel
 benutzen darf: "Immer erlauben" wählen.
 
-Die Freigaben hängen danach am Zertifikat statt am einzelnen Build und bleiben
-über Updates gültig. Prüfen lässt sich das so:
+Prüfen:
 
 ```bash
 codesign -d -r- "/Applications/LGTV Companion.app"
@@ -257,4 +84,25 @@ ist die App ad hoc signiert.
 Grenzen: Das Zertifikat gilt nur auf diesem Mac und ersetzt keine Developer ID.
 Für die Weitergabe an andere bleibt Gatekeeper im Weg. Ohne Zertifikat (CI,
 frischer Mac) signiert das Skript weiter ad hoc. Wird das Zertifikat gelöscht
-und neu erzeugt, müssen die Freigaben einmal neu gesetzt werden.
+und neu erzeugt, müssen die Freigaben einmal neu gesetzt werden, und macOS
+fragt beim Zugriff auf den Pairing Key im Schlüsselbund nach.
+
+## Freigaben, die die App braucht
+
+| Freigabe | Wofür | Wann macOS fragt |
+|---|---|---|
+| Lokales Netzwerk | TV finden und steuern | beim ersten Start |
+| Bedienungshilfen | Lautstärketasten abfangen | beim Einschalten der Option |
+| Bildschirm und Systemaudio | Software Volume | beim ersten Leiserstellen |
+| Bluetooth | Edifier Lautsprecher | beim Einschalten der Option |
+
+## Fehlerbehebung
+
+**Tasten reagieren nach einem Update nicht mehr.** Die App ist ad hoc signiert
+und hat ihre Freigabe verloren. Lokale Signatur einrichten, siehe oben.
+
+**TV wird nicht gefunden.** TV und Mac müssen im selben Netz sein, die Freigabe
+Lokales Netzwerk muss erteilt sein, der TV muss eingeschaltet sein.
+
+**Pairing läuft in einen Timeout.** Der TV zeigt beim ersten Verbinden einen
+Dialog, der mit der Fernbedienung bestätigt werden muss.

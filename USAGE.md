@@ -179,8 +179,7 @@ Manuelle Abnahme nach Änderungen am Audio Pfad:
 **Lösungen:**
 1. ✅ Stelle sicher, dass "Automatically manage this device" aktiviert ist
 2. ✅ Das Gerät muss "Enabled" sein
-3. ✅ Überprüfe die Logs: `/tmp/com.lgtvcompanion.daemon.log`
-4. ✅ Starte die App neu
+3. ✅ Starte die App neu
 
 ## Erweiterte Einstellungen
 
@@ -193,14 +192,10 @@ Um die App beim Login automatisch zu starten:
 
 ### Logs einsehen
 
-Für Debugging-Zwecke:
+Die App schreibt keine eigene Logdatei. Meldungen des Systems zur App zeigt:
 
 ```bash
-# Daemon Logs
-tail -f /tmp/com.lgtvcompanion.daemon.log
-
-# Error Logs
-tail -f /tmp/com.lgtvcompanion.daemon.error.log
+log stream --predicate 'process == "LGTV Companion"'
 ```
 
 ## Tipps & Tricks

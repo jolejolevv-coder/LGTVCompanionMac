@@ -245,7 +245,7 @@ struct SettingsView: View {
                 .font(.title)
                 .fontWeight(.bold)
             
-            Text("Version 1.0.0")
+            Text("Version \(AppInfo.version)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             
@@ -268,11 +268,11 @@ struct SettingsView: View {
             Spacer()
             
             HStack(spacing: 16) {
-                Link(destination: URL(string: "https://github.com")!) {
+                Link(destination: AppInfo.repositoryURL) {
                     Label("GitHub", systemImage: "link")
                 }
                 
-                Link(destination: URL(string: "https://github.com")!) {
+                Link(destination: AppInfo.issuesURL) {
                     Label("Report Issue", systemImage: "exclamationmark.bubble")
                 }
             }

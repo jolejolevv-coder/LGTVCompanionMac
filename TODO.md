@@ -16,18 +16,34 @@
 - [x] Auto-manage Toggle
 - [x] Test Functions
 
+## ✅ Seit v1.0 dazugekommen (Stand 02.10.2026)
+
+- [x] Menü in der Menüleiste im Stil des Kontrollzentrums
+- [x] Tastatur Lautstärketasten steuern TV, Lautsprecher oder den Mac Ton
+- [x] Software Volume für TV Ausgänge mit festem Pegel (optisch), mit Anzeige
+- [x] Edifier M90 per Bluetooth: Lautstärke und Sub Out
+- [x] Status vom TV per Abo statt nur per Abfrage
+- [x] MAC Adresse wird vom TV erfragt, Scanner zeigt nur steuerbare TVs
+- [x] TV bleibt an, solange ein anderer Eingang läuft oder ein Video spielt
+- [x] Auflösung und Skalierung der Displays im Menü
+- [x] Lokale Signatur, damit Freigaben Updates überleben
+- [x] Tests (52) und Ausführung in der CI
+
+Nicht mehr vorhanden: der separate Daemon. Die App läuft selbst in der
+Menüleiste und übernimmt dessen Aufgabe.
+
 ## 🚧 In Arbeit
 
 ### Kritisch für Release
-- [ ] App Icon erstellen
-- [ ] Code Signing einrichten
+- [x] App Icon erstellen
+- [x] Code Signing einrichten
 - [ ] Notarisierung
-- [ ] DMG Installer erstellen
+- [x] DMG Installer erstellen
 - [ ] Release auf GitHub
 - [ ] README Screenshots
 
 ### Wichtige Features
-- [ ] Menu Bar App Modus (optional statt Dock Icon)
+- [x] Menu Bar App Modus (optional statt Dock Icon)
 - [ ] Status Indikator (TV on/off im Menu Bar)
 - [ ] Notifications für wichtige Events
 - [ ] Crash Reporting
@@ -36,12 +52,12 @@
 ## 📋 Geplante Features (v1.1+)
 
 ### Erweiterte TV-Steuerung
-- [ ] Lautstärke-Steuerung
-- [ ] Input-Wechsel
+- [x] Lautstärke-Steuerung
+- [x] Input-Wechsel
 - [ ] App-Launch (Netflix, YouTube, etc.)
 - [ ] Cursor/Remote Control
 - [ ] Screenshot-Funktion
-- [ ] TV Status Monitoring
+- [x] TV Status Monitoring
 
 ### Verbesserungen
 - [ ] Mehrsprachigkeit (DE, EN, FR, ES)
@@ -61,7 +77,7 @@
 ### Netzwerk
 - [ ] mDNS/Bonjour Discovery
 - [ ] IPv6 Support
-- [ ] Bessere Subnetz-Erkennung
+- [x] Bessere Subnetz-Erkennung
 - [ ] VPN-Unterstützung
 - [ ] Proxy-Konfiguration
 
@@ -75,10 +91,10 @@
 ## 🐛 Bekannte Issues
 
 ### Hohe Priorität
-- [ ] WebSocket reconnection logic verbessern
-- [ ] Pairing Key Speicherung in Keychain
-- [ ] Error Handling bei Netzwerk-Timeouts
-- [ ] Display Configuration Monitor kann Race Conditions haben
+- [x] WebSocket reconnection logic verbessern
+- [x] Pairing Key Speicherung in Keychain
+- [x] Error Handling bei Netzwerk-Timeouts
+- [x] Display Configuration Monitor kann Race Conditions haben
 
 ### Mittlere Priorität
 - [ ] SSDP Scanner timeout kann zu kurz sein
@@ -89,7 +105,7 @@
 ### Niedrige Priorität
 - [ ] SwiftUI Preview warnings
 - [ ] Code Comments auf Englisch
-- [ ] Unit Tests fehlen
+- [x] Unit Tests fehlen
 - [ ] UI Tests fehlen
 
 ## 📚 Dokumentation TODO
@@ -134,7 +150,7 @@
 ### Sofort
 - [x] GitHub Releases
 - [ ] Homebrew Cask
-- [ ] GitHub Actions CI/CD
+- [x] GitHub Actions CI/CD
 
 ### Später
 - [ ] Mac App Store
