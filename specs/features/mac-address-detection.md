@@ -19,7 +19,8 @@ aus den Netzwerkeinstellungen des TV abgetippt werden muss.
 - [x] Der Scanner belegt das MAC Feld vor, eine Eingabe von Hand überschreibt.
 - [x] "Add Device" hat einen Knopf "Detect", aktiv bei gültiger IP.
 - [x] Antwortet kein TV, erscheint ein Hinweis statt eines stillen Fehlers.
-- [ ] In der installierten App durchgeklickt (Scanner und Dialog).
+- [x] In der installierten App bestätigt: Detect im Dialog liefert
+      80:5B:65:D6:27:E0 (Nutzer, 02.10.2026). Scanner nutzt denselben Weg.
 
 ## Implementation plan
 Phase 1: `Shared/MACAddressResolver.swift` mit `parse`, `normalize` und
