@@ -1,272 +1,145 @@
-# LGTV Companion macOS - Projekt-Architektur
+# Architektur
 
-## 📁 Ordner-Struktur
+Stand 02.10.2026, Version 1.1.0. Dieses Dokument beschreibt, was im Repo
+tatsächlich vorhanden ist. Wie man baut, steht in `BUILD.md`, wie man die App
+benutzt, in `USAGE.md`, die Begründung einzelner Features in `specs/features/`.
 
-```
-LGTVCompanionMac/
-│
-├── 📱 App/                          # Main Application (SwiftUI)
-│   ├── LGTVCompanionApp.swift      # App Entry Point
-│   └── Views/                       # UI Views
-│       ├── ContentView.swift        # Main Window
-│       ├── DeviceDetailView.swift   # Device Configuration
-│       ├── DeviceScannerView.swift  # Network Scanner
-│       ├── AddDeviceView.swift      # Manual Add Device
-│       └── SettingsView.swift       # App Settings
-│
-├── 🔧 Shared/                       # Shared Logic (App + Daemon)
-│   ├── WebOSClient.swift           # WebSocket API Client
-│   ├── WakeOnLAN.swift             # Wake-on-LAN Magic Packets
-│   ├── DeviceDiscovery.swift       # SSDP Network Scanner
-│   ├── PowerEventMonitor.swift     # macOS Power Events
-│   └── DeviceManager.swift         # Central Device Management
-│
-├── ⚙️ Daemon/                       # Background Service
-│   ├── main.swift                   # Daemon Entry Point
-│   └── com.lgtvcompanion.daemon.plist  # Launch Agent Config
-│
-├── 📖 Documentation/
-│   ├── README.md                    # Project Overview
-│   ├── QUICKSTART.md               # Quick Start Guide
-│   ├── BUILD.md                     # Build Instructions
-│   ├── USAGE.md                     # User Manual
-│   └── TODO.md                      # Roadmap & Issues
-│
-├── Package.swift                    # Swift Package Manager
-└── LICENSE                          # MIT License
-```
+## Überblick
 
-## 🏗️ Architektur-Diagramm
+Eine einzige App, die in der Menüleiste lebt und zusätzlich ein Fenster zur
+Einrichtung hat. Sie hält eine Verbindung zum LG TV, reagiert auf Ereignisse
+des Mac (Ruhezustand, Aufwachen, Leerlauf, Lautstärketasten) und steuert
+daraufhin TV, Lautsprecher oder den Ton des Mac.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    LGTV Companion                       │
-│                     (Main App)                          │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │  SwiftUI     │  │   Settings   │  │   Scanner    │ │
-│  │  Interface   │  │      UI      │  │      UI      │ │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘ │
-│         │                 │                 │          │
-│         └─────────────────┼─────────────────┘          │
-│                           │                            │
-│                    ┌──────▼───────┐                    │
-│                    │ DeviceManager│                    │
-│                    └──────┬───────┘                    │
-│                           │                            │
-└───────────────────────────┼────────────────────────────┘
-                            │
-                ┌───────────┴───────────┐
-                │                       │
-    ┌───────────▼──────────┐ ┌─────────▼────────────┐
-    │   Shared Framework   │ │  Launch Agent/Daemon │
-    │                      │ │                      │
-    │ ┌──────────────────┐ │ │  ┌────────────────┐ │
-    │ │ WebOSClient      │ │ │  │ PowerMonitor   │ │
-    │ │ - WebSocket API  │ │ │  │ - Sleep/Wake   │ │
-    │ │ - Pairing        │ │ │  │ - Shutdown     │ │
-    │ │ - Commands       │ │ │  │ - Idle detect  │ │
-    │ └──────────────────┘ │ │  └────────────────┘ │
-    │                      │ │                      │
-    │ ┌──────────────────┐ │ │  Auto-manages TVs   │
-    │ │ WakeOnLAN        │ │ │  based on events    │
-    │ │ - Magic Packet   │ │ │                      │
-    │ │ - UDP Broadcast  │ │ └──────────────────────┘
-    │ └──────────────────┘ │           │
-    │                      │           │
-    │ ┌──────────────────┐ │           │
-    │ │ DeviceDiscovery  │ │           │
-    │ │ - SSDP Scanner   │ │           │
-    │ │ - mDNS          │ │           │
-    │ └──────────────────┘ │           │
-    └──────────────────────┘           │
-              │                        │
-              │                        │
-    ┌─────────▼────────────────────────▼─────┐
-    │         LG WebOS TV (Network)          │
-    │  ┌──────────────┐  ┌──────────────┐   │
-    │  │ WebSocket    │  │ Wake-on-LAN  │   │
-    │  │ Port 3000    │  │ Port 9       │   │
-    │  └──────────────┘  └──────────────┘   │
-    └────────────────────────────────────────┘
+┌──────────────────────────── App (SwiftUI) ────────────────────────────┐
+│  Menü in der Menüleiste     Fenster (Geräte, Settings)     Anzeige    │
+└───────────────┬───────────────────────────────────────────────────────┘
+                │ beobachtet und ruft auf
+┌───────────────▼──────────── DeviceManager ────────────────────────────┐
+│  Geräteliste, Status, Automatik, Wahl des Lautstärkeziels, Settings   │
+└──┬──────────┬───────────┬────────────┬───────────────┬────────────────┘
+   │          │           │            │               │
+WebOSClient  PowerEvent  MediaKey   SoftwareVolume   EdifierSpeaker
+(TV, WLAN)   Monitor     Monitor    Controller       Controller
+             (IOKit)     (Tasten)   (Core Audio)     (Bluetooth LE)
 ```
 
-## 🔄 Datenfluss
+Es gibt zwei Module: `LGTVCompanionShared` (alles ohne Oberfläche, mit Tests)
+und `LGTVCompanionApp` (SwiftUI). Externe Abhängigkeiten gibt es keine.
 
-### 1. Device Discovery
-```
-User clicks "Scan"
-    ↓
-DeviceDiscovery.startScan()
-    ↓
-Send SSDP M-SEARCH multicast
-    ↓
-Receive SSDP responses
-    ↓
-Parse device info (IP, Name, Model)
-    ↓
-Display in DeviceScannerView
-```
+## Module
 
-### 2. Device Pairing
-```
-User clicks "Pair Device"
-    ↓
-WebOSClient.connect()
-    ↓
-Open WebSocket to TV:3000
-    ↓
-WebOSClient.register()
-    ↓
-Send pairing request
-    ↓
-User accepts on TV
-    ↓
-Receive pairing key
-    ↓
-Save to UserDefaults
-```
+### Shared
 
-### 3. Power On
-```
-Power Event detected
-    ↓
-DeviceManager.powerOnDevice()
-    ↓
-WakeOnLAN.wake()
-    ↓
-Create magic packet (6×0xFF + 16×MAC)
-    ↓
-Send UDP broadcast
-    ↓
-TV receives and powers on
-```
+| Datei | Aufgabe |
+|---|---|
+| `DeviceManager.swift` | Zentrale: Geräte, veröffentlichter Status, Automatik, Routing der Tasten, Settings |
+| `WebOSClient.swift` | WebSocket Verbindung zum TV, Pairing, Befehle, Status Abos |
+| `PairingKeyStore.swift` | Pairing Keys im Schlüsselbund, Lesen und Schreiben der Geräteliste |
+| `DeviceDiscovery.swift` | TVs per SSDP finden, nur steuerbare anzeigen |
+| `MACAddressResolver.swift` | MAC des TV per SSDP erfragen |
+| `WakeOnLAN.swift` | Magic Packet senden, Adressen prüfen |
+| `PowerEventMonitor.swift` | Ruhezustand, Aufwachen, Leerlauf, Displaywechsel |
+| `DisplaySleepAssertions.swift` | Welche App hält gerade den Bildschirm wach (Videowiedergabe) |
+| `MediaKeyMonitor.swift` | Lautstärketasten abfangen |
+| `SoftwareVolume.swift` | Rechenregeln: Kurve, Stufen, Moduswahl |
+| `SoftwareVolumeController.swift` | Mac Ton per Core Audio Tap dämpfen |
+| `EdifierProtocol.swift` | Frames des Edifier Protokolls bauen und lesen |
+| `EdifierSpeakerController.swift` | Bluetooth Verbindung zu den Lautsprechern |
+| `DisplayControl.swift` | Auflösung und Skalierung der Displays |
 
-### 4. Power Off
-```
-Power Event detected
-    ↓
-DeviceManager.powerOffDevice()
-    ↓
-WebOSClient.connect()
-    ↓
-WebOSClient.powerOff()
-    ↓
-Send "ssap://system/turnOff" command
-    ↓
-TV receives and powers off
-```
+### App
 
-## 🎯 Component Responsibilities
+| Datei | Aufgabe |
+|---|---|
+| `LGTVCompanionApp.swift` | Einstieg, Szenen, Verhalten beim Herunterfahren |
+| `AppInfo.swift` | Version und Links |
+| `VolumeHUD.swift` | Anzeige des Pegels oben rechts |
+| `Views/MenuBarView.swift` | Menü in der Menüleiste |
+| `Views/MenuComponents.swift` | Bausteine des Menüs (Karten, Regler, Knöpfe) |
+| `Views/ContentView.swift`, `DeviceDetailView.swift` | Fenster mit Geräteliste und Details |
+| `Views/DeviceScannerView.swift`, `AddDeviceView.swift` | TV hinzufügen |
+| `Views/SettingsView.swift` | Settings |
 
-### App Layer
-| Component | Verantwortung |
-|-----------|---------------|
-| ContentView | Haupt-UI, Device-Liste |
-| DeviceDetailView | Device-Konfiguration |
-| DeviceScannerView | Netzwerk-Scan UI |
-| SettingsView | App-Einstellungen |
+## Verbindung zum TV
 
-### Business Logic Layer
-| Component | Verantwortung |
-|-----------|---------------|
-| DeviceManager | Zentrale Koordination |
-| WebOSClient | TV-Kommunikation |
-| WakeOnLAN | Magic Packet versenden |
-| DeviceDiscovery | Netzwerk-Scanner |
-| PowerEventMonitor | System Events |
+- WebSocket über TLS auf Port 3001. Der unverschlüsselte Port 3000 antwortet
+  auf aktueller Firmware nicht mehr und dient nur als Rückfall.
+- Das Zertifikat des TV ist selbst signiert und wird akzeptiert.
+- TLS ist auf Version 1.2 begrenzt. Mit 1.3 hängt der Handshake des TV.
+- Die Verbindung muss über eine URL (`wss://…`) aufgebaut werden. Mit Host und
+  Port getrennt sendet Network.framework keinen brauchbaren Upgrade, der TV
+  ignoriert ihn.
+- Nach jedem Registrieren abonniert der Client Lautstärke und Power. Der TV
+  meldet Änderungen dann von sich aus. Zusätzlich fragt die App alle 60 s ab,
+  das hält die Verbindung warm.
+- Bei einem Fehler wird einmal neu verbunden und der Befehl wiederholt.
 
-### Daemon Layer
-| Component | Verantwortung |
-|-----------|---------------|
-| Launch Agent | Background Process |
-| PowerEventMonitor | Event Monitoring |
-| DeviceManager | Auto-Steuerung |
+Alle Zustände des Clients (offene Anfragen, Pairing, Verbindung) liegen auf
+einer seriellen Queue.
 
-## 🔐 Security & Permissions
+## Wohin ein Druck auf die Lautstärketaste geht
 
-### Required Permissions
-```
-✅ Local Network Access (NSLocalNetworkUsageDescription)
-✅ Bonjour Services (_webos._tcp)
-✅ Hardened Runtime
-```
+Entschieden wird in `DeviceManager.handleMediaKey`, in dieser Reihenfolge:
 
-### Data Storage
-```
-UserDefaults:
-├── devices                    # Array<WebOSDevice>
-├── settings                   # [String: Any]
-└── pairingKey_<deviceID>     # String (pro Device)
+1. **Lautsprecher**, wenn die Bluetooth Steuerung eingeschaltet ist und sie
+   nicht gerade als unerreichbar gelten. Regelt im Lautsprecher selbst.
+2. **Software Volume**, wenn der TV meldet, dass er die Lautstärke nicht ändern
+   kann (`adjustVolume: false`, etwa bei optischem Ausgang), und der Mac Ton an
+   ein Display geht. Dämpft den Mac Ton.
+3. **macOS**, wenn der TV nicht regeln kann und der Ton woanders hingeht
+   (Kopfhörer). Die Taste wird dann nicht abgefangen.
+4. **TV**, in allen übrigen Fällen.
 
-Future: Keychain für sensible Daten
-```
+Fängt die App die Taste ab, zeigt `VolumeHUD` den Pegel, weil macOS dann kein
+eigenes Overlay einblendet.
 
-## 🧪 Testing Strategy
+## Automatik
 
-### Unit Tests
-```
-✓ WebOSClient
-  - Connection handling
-  - Message parsing
-  - Error handling
+`PowerEventMonitor` meldet Ereignisse an `DeviceManager`:
 
-✓ WakeOnLAN
-  - MAC parsing
-  - Packet creation
-  - Network sending
+| Ereignis | Reaktion |
+|---|---|
+| Mac geht schlafen, Display aus, Leerlauf | TV aus (Bildschirm aus oder ganz, je Gerät) |
+| Mac wacht auf, Aktivität | TV an, erst per Befehl, sonst per Wake on LAN |
+| Herunterfahren, Neustart | TV ganz aus |
 
-✓ DeviceManager
-  - Device CRUD
-  - Event handling
-  - Persistence
-```
+Vor dem Ausschalten prüft die App zwei Ausnahmen: Zeigt der TV einen anderen
+Eingang als den des Mac, bleibt er an. Hält eine freigegebene App den
+Bildschirm wach (Video), gilt der Mac nicht als im Leerlauf.
 
-### Integration Tests
-```
-✓ End-to-End Pairing
-✓ Power Event Flow
-✓ Multi-Device Scenarios
-```
+Der Ruhezustand wird so lange verzögert, bis der Befehl beim TV angekommen ist,
+höchstens 20 Sekunden.
 
-### UI Tests
-```
-✓ Device Add Flow
-✓ Scanner Flow
-✓ Settings Changes
-```
+## Daten
 
-## 📊 Performance Targets
+| Was | Wo |
+|---|---|
+| Geräteliste ohne Pairing Keys | `UserDefaults`, Schlüssel `lgtvcompanion.devices` |
+| Pairing Keys | Schlüsselbund, Dienst `com.lgtvcompanion.mac.pairing-key`, ein Eintrag je Gerät |
+| Settings | `UserDefaults`, Schlüssel `lgtvcompanion.settings` |
+| Lautsprecher (an oder aus, Kennung) | `UserDefaults`, Schlüssel `lgtvcompanion.speakers.*` |
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| App Launch | < 1s | Cold start |
-| Device Discovery | < 5s | SSDP timeout |
-| Power On | < 3s | WOL + boot time |
-| Power Off | < 1s | WebSocket command |
-| Memory | < 50MB | Idle state |
-| Battery Impact | Minimal | Background daemon |
+## Threads
 
-## 🚀 Deployment Flow
+- Oberfläche und veröffentlichter Status: Hauptthread.
+- `WebOSClient`: eigene serielle Queue, Ergebnisse gehen per `async` zurück.
+- `SoftwareVolumeController`: Der Audio Callback läuft auf einem Echtzeitthread.
+  Er liest nur einen Zielwert, ohne Sperre und ohne Speicher anzufordern.
+- `EdifierSpeakerController`: Bluetooth Callbacks auf dem Hauptthread.
 
-```
-Developer
-    ↓
-Build in Xcode
-    ↓
-Archive
-    ↓
-Code Sign (Developer ID)
-    ↓
-Notarize (Apple)
-    ↓
-Create DMG
-    ↓
-Upload to GitHub Releases
-    ↓
-User Downloads
-    ↓
-Install to /Applications
-    ↓
-Launch & Enjoy!
-```
+`DeviceManager` ist kein Actor. Zugriffe auf veröffentlichte Werte aus
+Hintergrundaufgaben laufen über `MainActor.run`. Die Compiler Warnungen zu
+`Sendable` in `WebOSClient` sind bekannt und betreffen Zugriffe, die über die
+serielle Queue laufen.
+
+## Tests
+
+`Tests/LGTVCompanionSharedTests` deckt die Logik ohne Hardware ab: Kurve und
+Stufen der Lautstärke, Moduswahl, Edifier Frames, Auslesen der TV Meldungen,
+MAC Erkennung, Ablage der Pairing Keys. Die CI führt sie bei jedem Push aus.
+
+Nicht automatisch getestet ist alles, was echte Geräte braucht: Verbindung zum
+TV, Audio Tap, Bluetooth, Tasten. Dafür stehen in den Specs und in `USAGE.md`
+Schritte zur Abnahme von Hand.

@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="LGTV Companion"
 BUNDLE_ID="com.lgtvcompanion.mac"
-VERSION="1.0.0"
+VERSION="1.1.0"
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
 

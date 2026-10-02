@@ -17,7 +17,7 @@ The TV automatically follows your Mac: screen off when the Mac sleeps, instantly
 
 ## Requirements
 
-- macOS 14 (Sonoma) or newer
+- macOS 14.2 (Sonoma) or newer
 - LG WebOS TV on the same network (Ethernet recommended)
 - TV setting enabled: **Settings → General → Devices → External Devices → "LG Connect Apps" / "Mobile TV On"** (enables Wake-on-LAN)
 
