@@ -90,14 +90,18 @@ public class DeviceManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let devicesKey = "lgtvcompanion.devices"
     private let settingsKey = "lgtvcompanion.settings"
+    /// Pairing keys live here, not in the preferences file.
+    private let pairingKeyStore: PairingKeyStoring
 
     /// WoL packets right after wake often get lost (network interface still
     /// coming up) — send several with a delay between.
     private static let wakeRetryCount = 5
     private static let wakeRetryDelayNs: UInt64 = 2_000_000_000 // 2s
 
-    public init(enableSoftwareVolume: Bool = false) {
+    public init(enableSoftwareVolume: Bool = false,
+                pairingKeyStore: PairingKeyStoring = KeychainPairingKeyStore()) {
         softwareVolumeController = enableSoftwareVolume ? SoftwareVolumeController() : nil
+        self.pairingKeyStore = pairingKeyStore
         loadDevices()
         loadSettings()
         softwareVolumeController?.onOutputDeviceChanged = { [weak self] in
@@ -141,6 +145,7 @@ public class DeviceManager: ObservableObject {
         devices.removeAll { $0.id == device.id }
         clients[device.id]?.disconnect()
         clients.removeValue(forKey: device.id)
+        pairingKeyStore.delete(for: device.id)
         saveDevices()
     }
 
@@ -846,17 +851,22 @@ public class DeviceManager: ObservableObject {
     // MARK: - Persistence
 
     private func saveDevices() {
-        if let encoded = try? JSONEncoder().encode(devices) {
+        if let encoded = DevicePersistence.encode(devices, keyStore: pairingKeyStore) {
             userDefaults.set(encoded, forKey: devicesKey)
         }
     }
 
     private func loadDevices() {
         guard let data = userDefaults.data(forKey: devicesKey),
-              let decoded = try? JSONDecoder().decode([WebOSDevice].self, from: data) else {
+              let loaded = DevicePersistence.decode(data, keyStore: pairingKeyStore) else {
             return
         }
-        devices = decoded
+        devices = loaded.devices
+        // A key still sitting in the file in plain text (older version) is
+        // moved into the keychain by writing the list once.
+        if loaded.needsResave {
+            saveDevices()
+        }
     }
 
     private func saveSettings() {
