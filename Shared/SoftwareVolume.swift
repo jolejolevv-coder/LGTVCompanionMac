@@ -35,6 +35,14 @@ public enum SoftwareVolume {
         return clamp((current + Double(delta)) / steps)
     }
 
+    /// Speaker volume to set when the real speaker control takes over from
+    /// the software volume: the speaker's current volume scaled by the
+    /// software slider. Rounded down, so the hand-over can only get quieter,
+    /// never louder.
+    public static func handOverVolume(speakerVolume: Int, softwareLevel: Double) -> Int {
+        Int((Double(speakerVolume) * clamp(softwareLevel)).rounded(.down))
+    }
+
     /// Software volume takes over only when the TV says it cannot change the
     /// volume itself (fixed-level output such as optical) AND the Mac's sound
     /// actually goes out to a display. An unknown TV answer (nil) keeps the

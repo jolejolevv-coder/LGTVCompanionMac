@@ -11,6 +11,7 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject var deviceManager: DeviceManager
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var speakers = DeviceManager.shared.speakers
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -23,6 +24,11 @@ struct MenuBarView: View {
                     DeviceMenuSection(device: device)
                     Divider()
                 }
+            }
+
+            if speakers.isEnabled {
+                SpeakerMenuSection(speakers: speakers)
+                Divider()
             }
 
             Text("Display Resolution")
@@ -79,8 +85,18 @@ struct DeviceMenuSection: View {
     @State private var volume: Double = 0
     @State private var hasVolume = false
     @State private var busy = false
+    @ObservedObject private var speakers = DeviceManager.shared.speakers
 
     private var status: DeviceStatus? { deviceManager.deviceStatuses[device.id] }
+
+    /// With speaker control on, the speakers' own row below is the volume
+    /// control. The software row would only repeat "100 %", so it is hidden
+    /// unless the software volume is actually attenuating (the fallback when
+    /// the speakers are unreachable).
+    private var hidesVolumeRow: Bool {
+        speakers.isEnabled && usesSoftwareVolume
+            && deviceManager.softwareVolumeLevel >= 1 && !deviceManager.softwareVolumeMuted
+    }
 
     /// True when this row's volume controls drive the Mac-side software
     /// volume instead of the TV. Only the primary TV (the one the volume
@@ -131,7 +147,9 @@ struct DeviceMenuSection: View {
             }
 
             // Volume
-            if usesSoftwareVolume {
+            if hidesVolumeRow {
+                EmptyView()
+            } else if usesSoftwareVolume {
                 softwareVolumeRow
             } else {
                 tvVolumeRow
@@ -244,6 +262,88 @@ struct DeviceMenuSection: View {
         Task {
             try? await action()
             await MainActor.run { busy = false }
+        }
+    }
+}
+
+// MARK: - Speakers (Edifier, Bluetooth)
+
+struct SpeakerMenuSection: View {
+    @ObservedObject var speakers: EdifierSpeakerController
+    @State private var sliderVolume: Double = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "hifispeaker.2.fill")
+                    .foregroundStyle(.secondary)
+                Text(speakers.deviceName ?? "Speakers")
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: speakers.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 18)
+
+                Slider(value: $sliderVolume, in: 0...Double(speakers.maxVolume), step: 1) { editing in
+                    if !editing { speakers.setVolume(Int(sliderVolume)) }
+                }
+                .disabled(speakers.volume == nil)
+
+                Text("\(Int(sliderVolume))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 24, alignment: .trailing)
+            }
+
+            HStack(spacing: 8) {
+                Text("Sub")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("Sub Out", selection: Binding(
+                    get: { speakers.subOut ?? .medium },
+                    set: { speakers.setSubOut($0) }
+                )) {
+                    ForEach(EdifierSubOutLevel.allCases) { level in
+                        Text(level.label).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(speakers.subOut == nil)
+            }
+
+            if speakers.state == .unavailable {
+                HStack {
+                    Text("Not reachable. Close the Edifier app on your phone.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Retry") { speakers.refresh() }
+                        .controlSize(.small)
+                }
+            }
+        }
+        .onAppear {
+            speakers.refresh()
+            if let volume = speakers.volume { sliderVolume = Double(volume) }
+        }
+        .onChange(of: speakers.volume) { _, newValue in
+            if let newValue = newValue { sliderVolume = Double(newValue) }
+        }
+    }
+
+    private var statusText: String {
+        switch speakers.state {
+        case .connected: return "Connected"
+        case .connecting: return "Connecting…"
+        case .unavailable: return "Not reachable"
+        case .idle: return speakers.volume == nil ? "Idle" : "Standby"
         }
     }
 }

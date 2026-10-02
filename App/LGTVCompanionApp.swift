@@ -66,7 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.applicationIconImage = icon
         }
 
-        DeviceManager.shared.onSoftwareVolumeKey = { level, muted in
+        DeviceManager.shared.onVolumeKeyFeedback = { level, muted in
             VolumeHUD.shared.show(level: level, muted: muted)
         }
 

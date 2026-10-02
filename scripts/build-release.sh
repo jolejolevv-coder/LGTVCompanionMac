@@ -54,6 +54,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.2</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>LGTV Companion uses Bluetooth to set the volume and Sub Out level of your Edifier speakers.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>LGTV Companion adjusts the volume of your Mac's sound when the TV cannot do it itself, for example with speakers on the TV's optical output.</string>
     <key>NSHighResolutionCapable</key>

@@ -56,11 +56,15 @@ public class DeviceManager: ObservableObject {
     @Published public private(set) var softwareVolumeMuted = false
     /// True while the volume keys and the menu slider drive the software volume.
     @Published public private(set) var softwareVolumeActive = false
-    /// Called on the main thread after a keyboard key changed the software
-    /// volume (level 0...1, muted). The keys are swallowed in that mode, so
-    /// the app shows its own on-screen display. Not called for the menu
+    /// Called on the main thread after a keyboard key changed the volume the
+    /// app controls itself: software volume or speaker volume (level 0...1,
+    /// muted). The keys are swallowed then, so the app shows its own display. Not called for the menu
     /// slider, which already shows the value.
-    public var onSoftwareVolumeKey: ((Double, Bool) -> Void)?
+    public var onVolumeKeyFeedback: ((Double, Bool) -> Void)?
+
+    /// Bluetooth control of Edifier speakers (real volume, Sub Out). Idle
+    /// until switched on in Settings.
+    public let speakers = EdifierSpeakerController()
 
     /// Apps allowed to keep the TV on while they hold a display-sleep
     /// assertion (i.e. while playing video). Persisted by bundle ID so the
@@ -103,6 +107,12 @@ public class DeviceManager: ObservableObject {
             self?.syncSoftwareVolume()
         }
         syncSoftwareVolume()
+        speakers.onKeyVolumeChanged = { [weak self] level, muted in
+            self?.onVolumeKeyFeedback?(level, muted)
+        }
+        speakers.onVolumeKnown = { [weak self] in
+            self?.handOverSoftwareVolumeToSpeakers()
+        }
         // Only auto-start when the permission is already there — otherwise
         // macOS would show the Accessibility prompt on every launch.
         if mediaKeysEnabled && MediaKeyMonitor.hasAccessibilityPermission {
@@ -589,6 +599,14 @@ public class DeviceManager: ObservableObject {
     /// Called on the main thread (the event-tap source runs on the main run loop).
     @discardableResult
     private func handleMediaKey(_ key: MediaKeyEvent) -> Bool {
+        // Real speaker control beats everything else: it changes the level in
+        // the speakers themselves, for every source and without digital loss.
+        // If the speakers were just found unreachable, fall through.
+        if speakers.canHandleVolumeKeys {
+            speakers.handleVolumeKey(key)
+            return true
+        }
+
         guard let device = devices.first(where: { $0.enabled }) else { return false }
 
         if softwareVolumeActive {
@@ -723,7 +741,27 @@ public class DeviceManager: ObservableObject {
         case .mute:
             toggleSoftwareMute()
         }
-        onSoftwareVolumeKey?(softwareVolumeLevel, softwareVolumeMuted)
+        onVolumeKeyFeedback?(softwareVolumeLevel, softwareVolumeMuted)
+    }
+
+    /// Delay between lowering the speakers and releasing the software
+    /// attenuation during a hand-over, so the command has reached them.
+    private static let handOverDelaySeconds: TimeInterval = 0.3
+
+    /// When the speakers become controllable while the software volume is
+    /// attenuating, move that attenuation into the speakers: two volume
+    /// controls stacked on each other would be confusing. Order matters,
+    /// speakers down first, then software back to 100 %, so it never gets
+    /// louder in between.
+    private func handOverSoftwareVolumeToSpeakers() {
+        guard softwareVolumeActive, !softwareVolumeMuted, softwareVolumeLevel < 1,
+              let speakerVolume = speakers.volume else { return }
+
+        speakers.setVolume(SoftwareVolume.handOverVolume(speakerVolume: speakerVolume,
+                                                         softwareLevel: softwareVolumeLevel))
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.handOverDelaySeconds) { [weak self] in
+            self?.setSoftwareVolume(level: 1)
+        }
     }
 
     /// Remembers whether the primary TV (the one the volume keys go to) can
