@@ -27,9 +27,9 @@ Preset antworten wie dokumentiert.
 - [x] Echte Antworten des Geräts werden geparst, falsche Prüfsumme, gekürzte
       und fremde Daten werden verworfen (Tests).
 - [x] Lesen gegen das echte Gerät funktioniert (Testprogramm, 02.10.2026).
-- [ ] Sub Out im Menü umschalten, Lautsprecher bestätigen den neuen Wert.
-- [ ] Lautstärketasten ändern die Lautstärke der Lautsprecher, die Anzeige
-      oben rechts zeigt den Wert.
+- [x] Sub Out im Menü umschalten funktioniert (Nutzer, 02.10.2026).
+- [x] Lautstärke der Lautsprecher lässt sich vom Mac aus ändern (Nutzer,
+      02.10.2026).
 - [ ] Stummtaste setzt auf 0 und stellt den alten Wert wieder her.
 - [ ] Slider im Menü setzt die Lautstärke.
 - [ ] Nach 20 s ohne Nutzung trennt die App, die Handy App kommt wieder dran.
