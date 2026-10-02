@@ -69,6 +69,9 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
 
     private var pendingKeySteps = 0
     private var pendingMuteToggle = false
+    /// Set by a keyboard key; the next applied change then reports back for
+    /// the on-screen display. UI changes leave it unset.
+    private var keyFeedbackPending = false
     private var pendingVolume: Int?
     private var pendingSubOut: EdifierSubOutLevel?
     private var volumeBeforeMute: Int?
@@ -128,7 +131,16 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         }
     }
 
+    /// Mute or unmute from the UI. Unlike the mute key it does not trigger
+    /// the on-screen level display.
+    public func toggleMute() {
+        pendingMuteToggle.toggle()
+        connectIfNeeded()
+        applyPending()
+    }
+
     public func handleVolumeKey(_ key: MediaKeyEvent) {
+        keyFeedbackPending = true
         switch key {
         case .volumeUp: pendingKeySteps += 1
         case .volumeDown: pendingKeySteps -= 1
@@ -212,6 +224,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         // Key presses queued for this attempt would arrive seconds late.
         pendingKeySteps = 0
         pendingMuteToggle = false
+        keyFeedbackPending = false
         pendingVolume = nil
         pendingSubOut = nil
         retryNotBefore = Date().addingTimeInterval(Self.retryPauseSeconds)
@@ -308,7 +321,8 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
             writeVolume(base + steps * Self.volumeUnitsPerKey)
         }
 
-        if let now = volume, maxVolume > 0 {
+        if keyFeedbackPending, let now = volume, maxVolume > 0 {
+            keyFeedbackPending = false
             onKeyVolumeChanged?(Double(now) / Double(maxVolume), isMuted)
         }
     }

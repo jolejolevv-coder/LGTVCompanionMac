@@ -14,60 +14,69 @@ struct MenuBarView: View {
     @ObservedObject private var speakers = DeviceManager.shared.speakers
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: MenuMetrics.cardSpacing) {
             if deviceManager.devices.isEmpty {
-                Text("No TVs configured")
-                    .foregroundStyle(.secondary)
-                Button("Add a TV…") { openMainWindow() }
+                MenuCard {
+                    MenuCardHeader(title: "No TV yet", status: "Add your LG TV to control it") {
+                        SymbolTile(systemName: "tv", tint: .gray)
+                    }
+                    CapsuleButton(title: "Add a TV…") { openMainWindow() }
+                }
             } else {
                 ForEach(deviceManager.devices.filter(\.enabled)) { device in
                     DeviceMenuSection(device: device)
-                    Divider()
                 }
             }
 
             if speakers.isEnabled {
                 SpeakerMenuSection(speakers: speakers)
-                Divider()
             }
 
-            Text("Display Resolution")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            DisplayScalingSection()
-            Divider()
-
-            HStack {
-                Button {
-                    openMainWindow()
-                } label: {
-                    Label("Open App", systemImage: "macwindow")
-                }
-
-                Spacer()
-
-                Button {
-                    Task { await deviceManager.refreshAllStatuses() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-
-                Button(role: .destructive) {
-                    NSApp.terminate(nil)
-                } label: {
-                    Label("Quit", systemImage: "power")
-                }
+            MenuCard {
+                MenuCaption(text: "Displays")
+                DisplayScalingSection()
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
+
+            footer
         }
-        .padding(12)
-        .frame(width: 300)
+        .padding(MenuMetrics.panelPadding)
+        .frame(width: MenuMetrics.panelWidth)
         .task {
             deviceManager.startPowerEventMonitoring()
             deviceManager.ensureMediaKeyTap()
             await deviceManager.refreshAllStatuses()
         }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 14) {
+            Button {
+                openMainWindow()
+            } label: {
+                Label("Open LGTV Companion", systemImage: "macwindow")
+                    .font(.system(size: 12))
+            }
+
+            Spacer()
+
+            Button {
+                Task { await deviceManager.refreshAllStatuses() }
+                speakers.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("Refresh")
+
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+            }
+            .help("Quit")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
     }
 
     private func openMainWindow() {
@@ -83,13 +92,15 @@ struct DeviceMenuSection: View {
     let device: WebOSDevice
 
     @State private var volume: Double = 0
-    @State private var hasVolume = false
     @State private var busy = false
     @ObservedObject private var speakers = DeviceManager.shared.speakers
 
+    private static let tvVolumeRange: ClosedRange<Double> = 0...100
+    private static let hdmiInputs = 1...4
+
     private var status: DeviceStatus? { deviceManager.deviceStatuses[device.id] }
 
-    /// With speaker control on, the speakers' own row below is the volume
+    /// With speaker control on, the speakers' own card is the volume
     /// control. The software row would only repeat "100 %", so it is hidden
     /// unless the software volume is actually attenuating (the fallback when
     /// the speakers are unreachable).
@@ -98,7 +109,7 @@ struct DeviceMenuSection: View {
             && deviceManager.softwareVolumeLevel >= 1 && !deviceManager.softwareVolumeMuted
     }
 
-    /// True when this row's volume controls drive the Mac-side software
+    /// True when this card's volume controls drive the Mac-side software
     /// volume instead of the TV. Only the primary TV (the one the volume
     /// keys go to) can be in that mode.
     private var usesSoftwareVolume: Bool {
@@ -114,39 +125,29 @@ struct DeviceMenuSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header: name + status
-            HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                Text(device.name)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        MenuCard {
+            MenuCardHeader(title: device.name, status: statusText, statusColor: statusColor) {
+                SymbolTile(systemName: "tv")
             }
 
-            // Power / screen controls
-            HStack(spacing: 6) {
-                controlButton("Screen On", icon: "tv") {
-                    try await deviceManager.screenOn(device)
+            HStack(spacing: 4) {
+                ControlTile(title: "Screen On", systemName: "tv", isDisabled: busy) {
+                    run { try await deviceManager.screenOn(device) }
                 }
-                controlButton("Screen Off", icon: "tv.slash") {
-                    try await deviceManager.screenOff(device)
+                ControlTile(title: "Screen Off", systemName: "tv.slash", isDisabled: busy) {
+                    run { try await deviceManager.screenOff(device) }
                 }
-                controlButton("Wake", icon: "sunrise") {
-                    try await deviceManager.powerOnDevice(device)
-                    await deviceManager.refreshStatus(for: device)
+                ControlTile(title: "Wake", systemName: "sunrise", isDisabled: busy) {
+                    run {
+                        try await deviceManager.powerOnDevice(device)
+                        await deviceManager.refreshStatus(for: device)
+                    }
                 }
-                controlButton("Power Off", icon: "power") {
-                    try await deviceManager.fullPowerOff(device)
+                ControlTile(title: "Power Off", systemName: "power", isDisabled: busy) {
+                    run { try await deviceManager.fullPowerOff(device) }
                 }
             }
 
-            // Volume
             if hidesVolumeRow {
                 EmptyView()
             } else if usesSoftwareVolume {
@@ -155,78 +156,58 @@ struct DeviceMenuSection: View {
                 tvVolumeRow
             }
 
-            // Inputs
-            HStack(spacing: 6) {
-                Text("Input")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                ForEach(1...4, id: \.self) { n in
-                    Button("HDMI \(n)") {
-                        run { try await deviceManager.switchInput("HDMI_\(n)", for: device) }
+            VStack(alignment: .leading, spacing: 6) {
+                MenuCaption(text: "Input")
+                HStack(spacing: 6) {
+                    ForEach(Self.hdmiInputs, id: \.self) { number in
+                        CapsuleButton(title: "HDMI \(number)") {
+                            run { try await deviceManager.switchInput("HDMI_\(number)", for: device) }
+                        }
                     }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
         }
         .onChange(of: status?.volume) { _, newValue in
-            if let v = newValue {
-                volume = Double(v)
-                hasVolume = true
-            }
+            if let newValue = newValue { volume = Double(newValue) }
         }
         .onAppear {
-            if let v = status?.volume { volume = Double(v); hasVolume = true }
+            if let current = status?.volume { volume = Double(current) }
         }
     }
 
     /// Volume on the TV itself (TV speakers, ARC).
     private var tvVolumeRow: some View {
-        HStack(spacing: 8) {
-            Button {
-                run { try await deviceManager.setMute(!(status?.muted ?? false), for: device)
-                      await deviceManager.refreshStatus(for: device) }
-            } label: {
-                Image(systemName: (status?.muted ?? false) ? "speaker.slash.fill" : "speaker.wave.2.fill")
-            }
-            .buttonStyle(.borderless)
-
-            Slider(value: $volume, in: 0...100, step: 1) { editing in
-                if !editing {
-                    run { try await deviceManager.setVolume(Int(volume), for: device) }
+        VolumeRow(
+            value: $volume,
+            range: Self.tvVolumeRange,
+            isMuted: status?.muted ?? false,
+            isEnabled: status?.isReachable ?? false,
+            accessibilityLabel: "TV volume",
+            onToggleMute: {
+                run {
+                    try await deviceManager.setMute(!(status?.muted ?? false), for: device)
+                    await deviceManager.refreshStatus(for: device)
                 }
+            },
+            onCommit: {
+                run { try await deviceManager.setVolume(Int(volume), for: device) }
             }
-            .disabled(!(status?.isReachable ?? false))
-
-            Text("\(Int(volume))")
-                .font(.caption.monospacedDigit())
-                .frame(width: 24, alignment: .trailing)
-        }
+        )
     }
 
     /// Volume of the Mac's sound, for TV outputs with a fixed level (optical).
     /// Local, so it follows the slider live and works while the TV is busy.
     private var softwareVolumeRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Button {
-                    deviceManager.toggleSoftwareMute()
-                } label: {
-                    Image(systemName: deviceManager.softwareVolumeMuted
-                          ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                }
-                .buttonStyle(.borderless)
-
-                Slider(value: softwareVolumePercent, in: 0...100)
-
-                Text("\(Int(softwareVolumePercent.wrappedValue))")
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 24, alignment: .trailing)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            VolumeRow(
+                value: softwareVolumePercent,
+                range: Self.tvVolumeRange,
+                isMuted: deviceManager.softwareVolumeMuted,
+                accessibilityLabel: "Mac volume",
+                onToggleMute: { deviceManager.toggleSoftwareMute() }
+            )
             Text("Mac volume. The TV's sound output has a fixed level.")
-                .font(.caption2)
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
     }
@@ -241,20 +222,6 @@ struct DeviceMenuSection: View {
     private var statusText: String {
         guard let status = status else { return "Unknown" }
         return status.powerState ?? "Offline"
-    }
-
-    private func controlButton(_ title: String, icon: String,
-                               _ action: @escaping () async throws -> Void) -> some View {
-        Button {
-            run(action)
-        } label: {
-            Image(systemName: icon)
-                .frame(maxWidth: .infinity)
-        }
-        .help(title)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(busy)
     }
 
     private func run(_ action: @escaping () async throws -> Void) {
@@ -273,55 +240,37 @@ struct SpeakerMenuSection: View {
     @State private var sliderVolume: Double = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "hifispeaker.2.fill")
-                    .foregroundStyle(.secondary)
-                Text(speakers.deviceName ?? "Speakers")
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        MenuCard {
+            MenuCardHeader(title: speakers.deviceName ?? "Speakers", status: statusText,
+                           statusColor: statusColor) {
+                SpeakerArtwork()
             }
 
-            HStack(spacing: 8) {
-                Image(systemName: speakers.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .frame(width: 18)
+            VolumeRow(
+                value: $sliderVolume,
+                range: 0...Double(speakers.maxVolume),
+                isMuted: speakers.isMuted,
+                isEnabled: speakers.volume != nil,
+                accessibilityLabel: "Speaker volume",
+                onToggleMute: { speakers.toggleMute() },
+                onCommit: { speakers.setVolume(Int(sliderVolume)) }
+            )
 
-                Slider(value: $sliderVolume, in: 0...Double(speakers.maxVolume), step: 1) { editing in
-                    if !editing { speakers.setVolume(Int(sliderVolume)) }
-                }
-                .disabled(speakers.volume == nil)
-
-                Text("\(Int(sliderVolume))")
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 24, alignment: .trailing)
-            }
-
-            HStack(spacing: 8) {
-                Text("Sub")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker("Sub Out", selection: Binding(
-                    get: { speakers.subOut ?? .medium },
-                    set: { speakers.setSubOut($0) }
-                )) {
-                    ForEach(EdifierSubOutLevel.allCases) { level in
-                        Text(level.label).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .disabled(speakers.subOut == nil)
+            VStack(alignment: .leading, spacing: 6) {
+                MenuCaption(text: "Subwoofer")
+                CapsulePicker(
+                    options: EdifierSubOutLevel.allCases,
+                    selection: speakers.subOut,
+                    label: { $0.label },
+                    isEnabled: speakers.subOut != nil,
+                    onSelect: { speakers.setSubOut($0) }
+                )
             }
 
             if speakers.state == .unavailable {
                 HStack {
-                    Text("Not reachable. Close the Edifier app on your phone.")
-                        .font(.caption2)
+                    Text("Close the Edifier app on your phone, then retry.")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Retry") { speakers.refresh() }
@@ -343,7 +292,15 @@ struct SpeakerMenuSection: View {
         case .connected: return "Connected"
         case .connecting: return "Connecting…"
         case .unavailable: return "Not reachable"
-        case .idle: return speakers.volume == nil ? "Idle" : "Standby"
+        case .idle: return speakers.volume == nil ? "Not connected" : "Standby"
+        }
+    }
+
+    private var statusColor: Color {
+        switch speakers.state {
+        case .connected: return .green
+        case .connecting: return .orange
+        case .unavailable, .idle: return .gray
         }
     }
 }
@@ -358,15 +315,17 @@ struct DisplayScalingSection: View {
         VStack(alignment: .leading, spacing: 6) {
             if displays.isEmpty {
                 Text("No external display")
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(displays) { display in
                     HStack {
-                        Image(systemName: "rectangle.on.rectangle")
+                        Image(systemName: "display")
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+                            .frame(width: 18)
                         Text(display.name)
-                            .font(.subheadline)
+                            .font(.system(size: 12))
                             .lineLimit(1)
                         Spacer()
 
@@ -385,7 +344,8 @@ struct DisplayScalingSection: View {
                             }
                         } label: {
                             Text(currentLabel(for: display))
-                                .font(.caption)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()

@@ -19,7 +19,7 @@
 import Foundation
 
 /// Level of the subwoofer output, as named in the ConneX app.
-public enum EdifierSubOutLevel: UInt8, CaseIterable, Identifiable {
+public enum EdifierSubOutLevel: UInt8, CaseIterable, Identifiable, Hashable {
     case low = 0
     case medium = 1
     case high = 2
