@@ -32,7 +32,7 @@ hoc Signatur hätte der Schlüsselbund nach jedem Update nachgefragt.
       02.10.2026).
 - [x] Installierte App: Nach dem ersten Start steht kein Key mehr in der
       Einstellungsdatei, der Eintrag im Schlüsselbund existiert.
-- [ ] Der TV verlangt kein neues Pairing (Nutzer).
+- [x] Der TV verlangt kein neues Pairing (Nutzer, 02.10.2026).
 
 ## Implementation plan
 Phase 1: `Shared/PairingKeyStore.swift` mit `PairingKeyStoring`,
