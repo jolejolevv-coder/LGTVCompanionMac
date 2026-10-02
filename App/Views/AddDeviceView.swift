@@ -15,6 +15,8 @@ struct AddDeviceView: View {
     @State private var name = "LG TV"
     @State private var ipAddress = ""
     @State private var macAddress = ""
+    @State private var isDetectingMac = false
+    @State private var macDetectionFailed = false
     
     var isValid: Bool {
         !name.isEmpty &&
@@ -58,9 +60,23 @@ struct AddDeviceView: View {
                         }
                     }
                     
-                    TextField("MAC Address", text: $macAddress)
-                        .textFieldStyle(.roundedBorder)
-                        .help("MAC address in format AA:BB:CC:DD:EE:FF")
+                    HStack {
+                        TextField("MAC Address", text: $macAddress)
+                            .textFieldStyle(.roundedBorder)
+                            .help("MAC address in format AA:BB:CC:DD:EE:FF")
+
+                        Button(isDetectingMac ? "Detecting…" : "Detect") {
+                            detectMacAddress()
+                        }
+                        .disabled(isDetectingMac || !WakeOnLAN.isValidIPAddress(ipAddress))
+                        .help("Read the MAC address from the network. The TV must be on.")
+                    }
+
+                    if macDetectionFailed {
+                        Text("No device answered at this IP address. Turn the TV on, or enter the MAC address manually.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     
                     if !macAddress.isEmpty && !WakeOnLAN.isValidMacAddress(macAddress) {
                         HStack {
@@ -114,6 +130,24 @@ struct AddDeviceView: View {
         .frame(width: 500, height: 500)
     }
     
+    private func detectMacAddress() {
+        isDetectingMac = true
+        macDetectionFailed = false
+        let ip = ipAddress
+
+        Task {
+            let mac = await MACAddressResolver.resolve(ip: ip)
+            await MainActor.run {
+                isDetectingMac = false
+                if let mac = mac {
+                    macAddress = mac
+                } else {
+                    macDetectionFailed = true
+                }
+            }
+        }
+    }
+
     private func addDevice() {
         let device = WebOSDevice(
             name: name,

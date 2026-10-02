@@ -103,7 +103,9 @@ struct DeviceScannerView: View {
                 DiscoveredDeviceRow(
                     device: device,
                     macAddress: Binding(
-                        get: { macAddresses[device.ipAddress] ?? "" },
+                        // What the user typed wins; otherwise the address
+                        // discovery read from the network.
+                        get: { macAddresses[device.ipAddress] ?? device.macAddress ?? "" },
                         set: { macAddresses[device.ipAddress] = $0 }
                     )
                 )
@@ -141,7 +143,7 @@ struct DeviceScannerView: View {
     private func addSelectedDevices() {
         for deviceIP in selectedDevices {
             guard let discoveredDevice = discovery.discoveredDevices.first(where: { $0.ipAddress == deviceIP }),
-                  let macAddress = macAddresses[deviceIP],
+                  let macAddress = macAddresses[deviceIP] ?? discoveredDevice.macAddress,
                   !macAddress.isEmpty,
                   WakeOnLAN.isValidMacAddress(macAddress) else {
                 continue
@@ -199,7 +201,9 @@ struct DiscoveredDeviceRow: View {
                 }
             }
             
-            Text("Note: MAC address must be entered manually. You can find it in your TV's network settings.")
+            Text(device.macAddress != nil
+                 ? "MAC address detected from your network. If Wake-on-LAN fails, compare it with the TV's network settings."
+                 : "MAC address could not be detected. Enter it manually; you can find it in your TV's network settings.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .italic()
