@@ -40,6 +40,20 @@ Die Lautsprecher haben genau einen frei belegbaren Platz ("Custom").
 - [ ] Nachtmodus nach Zeitplan schaltet zur eingestellten Zeit.
 - [ ] Eingang nach dem Aufwachen des Mac.
 
+## Nachtrag 03.10.2026: Stromsparmodus
+
+Die Lautsprecher wachten nach dem Ruhezustand des Mac nicht mit auf. Ursache
+war ihr eigener Stromsparmodus (automatischer Standby), ein Befehl zum
+Einschalten existiert nicht. Der Modus ist jetzt im Tab Speakers schaltbar.
+
+- [x] Abfrage und Setzen stimmen mit der Referenz überein, Antworten des
+      Geräts werden geparst (Tests).
+- [x] Am Gerät des Nutzers über den Controller der App belegt: aus, an,
+      wieder aus, jeweils zurückgelesen (Testprogramm, 03.10.2026).
+- [ ] Schalter in der installierten App vom Nutzer bedient.
+
+Die Einstellung liegt in den Lautsprechern, nicht in der App.
+
 ## Implementation plan
 Phase 1: Protokoll (`EdifierProtocol`) und reine Logik (`SpeakerSound`), Tests.
 Phase 2: `EdifierSpeakerController`: Eingang, Preset, Kurve in Abständen von

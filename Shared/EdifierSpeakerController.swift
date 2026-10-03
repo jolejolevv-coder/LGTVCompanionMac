@@ -36,6 +36,8 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     @Published public private(set) var eqPreset: EdifierEQPreset?
     /// Gains of the Custom slot in dB, one per band.
     @Published public private(set) var customEQ: [Double]?
+    /// Auto standby of the speakers. nil until they reported it.
+    @Published public private(set) var powerSaveEnabled: Bool?
     /// Upper bound applied to every volume change while set (night mode).
     @Published public private(set) var volumeLimit: Int?
     /// True while the mute key has turned the volume down to zero.
@@ -203,6 +205,13 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         enqueue([EdifierProtocol.setEQPreset(preset), EdifierProtocol.queryEQPreset()])
     }
 
+    /// Switches the speakers' auto standby. The setting is stored in the
+    /// speakers, not in the app. Read back afterwards.
+    public func setPowerSave(_ enabled: Bool) {
+        powerSaveEnabled = enabled
+        enqueue([EdifierProtocol.setPowerSave(enabled), EdifierProtocol.queryPowerSave()])
+    }
+
     /// Writes all bands into the speakers' Custom slot and selects it. The
     /// bands only take effect while Custom is selected, so it is selected
     /// first. Reads both back afterwards.
@@ -356,6 +365,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         send(EdifierProtocol.queryInput())
         send(EdifierProtocol.queryEQPreset())
         send(EdifierProtocol.queryCustomEQ())
+        send(EdifierProtocol.queryPowerSave())
     }
 
     private func sendSpaced(_ frames: [Data]) {
@@ -458,6 +468,8 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
             eqPreset = preset
         case .customEQ(let gains):
             customEQ = gains
+        case .powerSave(let enabled):
+            powerSaveEnabled = enabled
         case .other:
             return
         }

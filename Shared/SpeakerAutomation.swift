@@ -283,7 +283,7 @@ public final class SpeakerAutomation: ObservableObject {
             }
         case .customEQ(let gains):
             adoptCustomCurve(gains)
-        case .eqPreset, .name, .other:
+        case .eqPreset, .name, .powerSave, .other:
             break
         }
     }

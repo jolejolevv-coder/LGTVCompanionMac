@@ -20,6 +20,7 @@ struct SpeakerSettingsTab: View {
                 soundSection
                 nightSection
                 wakeSection
+                powerSection
             }
         }
         .formStyle(.grouped)
@@ -163,6 +164,25 @@ struct SpeakerSettingsTab: View {
             },
             set: { set(NightSchedule.minutesOfDay(for: $0)) }
         )
+    }
+
+    // MARK: - Power
+
+    private var powerSection: some View {
+        Section {
+            Toggle("Power saving (auto standby)", isOn: Binding(
+                get: { speakers.powerSaveEnabled ?? false },
+                set: { speakers.setPowerSave($0) }
+            ))
+            .tint(.green)
+            .disabled(speakers.powerSaveEnabled == nil)
+
+            Text("On: the speakers go to standby by themselves after a while without sound, and then do not wake when the Mac does; they have to be switched on by hand. Off: they stay on and play at once, at the cost of idle power. The setting is stored in the speakers.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("Power")
+        }
     }
 
     // MARK: - Wake

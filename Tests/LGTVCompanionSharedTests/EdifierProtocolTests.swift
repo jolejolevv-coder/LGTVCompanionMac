@@ -275,3 +275,34 @@ final class SpeakerSoundTests: XCTestCase {
         XCTAssertEqual(NightSchedule.minutesOfDay(for: date, calendar: calendar), 22 * 60 + 15)
     }
 }
+
+final class EdifierPowerSaveTests: XCTestCase {
+
+    private func bytes(_ hex: String) -> Data {
+        Data(hex.split(separator: " ").map { UInt8($0, radix: 16)! })
+    }
+
+    func testFramesMatchReference() {
+        XCTAssertEqual(EdifierProtocol.queryPowerSave(), bytes("AA EC B1 00 00 47"))
+        XCTAssertEqual(EdifierProtocol.setPowerSave(false), bytes("AA EC B2 00 01 00 49"))
+        XCTAssertEqual(EdifierProtocol.setPowerSave(true), bytes("AA EC B2 00 01 01 4A"))
+    }
+
+    /// Replies of the user's M90 before and after switching it off, 2026-10-03.
+    func testParsesRepliesFromRealSpeaker() {
+        XCTAssertEqual(EdifierProtocol.parse(bytes("BB EC B1 00 01 01 5A")), [.powerSave(true)])
+        XCTAssertEqual(EdifierProtocol.parse(bytes("BB EC B1 00 01 00 59")), [.powerSave(false)])
+    }
+
+    func testSetterAcknowledgementIsNotMistakenForTheState() {
+        // The acknowledgement of "set off" carries 00 too, but under the
+        // setter's opcode. Only the query answer counts as state.
+        XCTAssertEqual(EdifierProtocol.parse(bytes("BB EC B2 00 01 00 5A")), [.other(app: 0xEC, opcode: 0xB2)])
+    }
+
+    func testUnknownStateValueIsRejected() {
+        let frame = Data([0xBB, 0xEC, 0xB1, 0x00, 0x01, 0x07])
+        XCTAssertEqual(EdifierProtocol.parse(frame + Data([EdifierProtocol.checksum(frame)])),
+                       [.other(app: 0xEC, opcode: 0xB1)])
+    }
+}

@@ -93,6 +93,9 @@ public enum EdifierReply: Equatable {
     case eqPreset(EdifierEQPreset)
     /// Gain of each custom EQ band in dB, in the order of `eqBandFrequencies`.
     case customEQ([Double])
+    /// Whether the speakers go to standby by themselves after a while
+    /// without sound.
+    case powerSave(Bool)
     /// Any other valid frame (acknowledgements, settings we do not use).
     case other(app: UInt8, opcode: UInt8)
 }
@@ -137,6 +140,8 @@ public enum EdifierProtocol {
     private static let opcodeSetEQPreset: UInt8 = 0xC4
     private static let opcodeQueryCustomEQ: UInt8 = 0x43
     private static let opcodeSetEQBand: UInt8 = 0x44
+    private static let opcodeQueryPowerSave: UInt8 = 0xB1
+    private static let opcodeSetPowerSave: UInt8 = 0xB2
     private static let opcodeQuerySubOut: UInt8 = 0x13
     private static let opcodeSetSubOut: UInt8 = 0x14
     /// The M90 has a single Sub Out, addressed as index 0.
@@ -174,6 +179,12 @@ public enum EdifierProtocol {
     }
 
     public static func queryCustomEQ() -> Data { frame(app: mainApp, opcode: opcodeQueryCustomEQ) }
+
+    public static func queryPowerSave() -> Data { frame(app: mainApp, opcode: opcodeQueryPowerSave) }
+
+    public static func setPowerSave(_ enabled: Bool) -> Data {
+        frame(app: mainApp, opcode: opcodeSetPowerSave, payload: [enabled ? 1 : 0])
+    }
 
     /// Sets one band of the custom EQ. Only takes effect while the Custom
     /// preset is selected. nil for a band index that does not exist.
@@ -273,6 +284,8 @@ public enum EdifierProtocol {
         case (mainApp, opcodeQueryEQPreset) where payload.count == 1:
             if let preset = EdifierEQPreset(rawValue: payload[0]) { return .eqPreset(preset) }
             return .other(app: app, opcode: opcode)
+        case (mainApp, opcodeQueryPowerSave) where payload.count == 1 && payload[0] <= 1:
+            return .powerSave(payload[0] == 1)
         case (mainApp, opcodeQueryCustomEQ):
             if let gains = decodeCustomEQ(payload) { return .customEQ(gains) }
             return .other(app: app, opcode: opcode)
