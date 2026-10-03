@@ -34,7 +34,7 @@ Die Lautsprecher haben genau einen frei belegbaren Platz ("Custom").
 - [x] Einstellungen überstehen einen Neustart, die Lautstärkegrenze gilt
       sofort wieder (Tests).
 - [x] Menü und Settings Tab gerendert und per Bildschirmfoto geprüft.
-- [ ] Vom Nutzer gehört: Techno und Hip-Hop klingen wie gewünscht.
+- [x] Vom Nutzer gehört: Techno und Hip-Hop passen (03.10.2026).
 - [ ] Nachtmodus von Hand: Grenze greift bei Tasten und Regler, Sub wechselt,
       Ausschalten stellt den alten Sub Pegel wieder her.
 - [ ] Nachtmodus nach Zeitplan schaltet zur eingestellten Zeit.
