@@ -1,6 +1,6 @@
 # Architektur
 
-Stand 02.10.2026, Version 1.1.0. Dieses Dokument beschreibt, was im Repo
+Stand 03.10.2026, Version 1.2.0. Dieses Dokument beschreibt, was im Repo
 tatsächlich vorhanden ist. Wie man baut, steht in `BUILD.md`, wie man die App
 benutzt, in `USAGE.md`, die Begründung einzelner Features in `specs/features/`.
 
@@ -47,6 +47,8 @@ und `LGTVCompanionApp` (SwiftUI). Externe Abhängigkeiten gibt es keine.
 | `SoftwareVolumeController.swift` | Mac Ton per Core Audio Tap dämpfen |
 | `EdifierProtocol.swift` | Frames des Edifier Protokolls bauen und lesen |
 | `EdifierSpeakerController.swift` | Bluetooth Verbindung zu den Lautsprechern |
+| `SpeakerSound.swift` | Klangwahl, EQ Kurven (Techno, Hip-Hop), Zeitplan des Nachtmodus |
+| `SpeakerAutomation.swift` | My EQ, Nachtmodus, Eingang beim Aufwachen |
 | `DisplayControl.swift` | Auflösung und Skalierung der Displays |
 
 ### App
@@ -61,6 +63,7 @@ und `LGTVCompanionApp` (SwiftUI). Externe Abhängigkeiten gibt es keine.
 | `Views/ContentView.swift`, `DeviceDetailView.swift` | Fenster mit Geräteliste und Details |
 | `Views/DeviceScannerView.swift`, `AddDeviceView.swift` | TV hinzufügen |
 | `Views/SettingsView.swift` | Settings |
+| `Views/SpeakerSettingsView.swift` | Settings Tab für die Lautsprecher, Equalizer |
 
 ## Verbindung zum TV
 

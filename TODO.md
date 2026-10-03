@@ -22,12 +22,14 @@
 - [x] Tastatur Lautstärketasten steuern TV, Lautsprecher oder den Mac Ton
 - [x] Software Volume für TV Ausgänge mit festem Pegel (optisch), mit Anzeige
 - [x] Edifier M90 per Bluetooth: Lautstärke und Sub Out
+- [x] Edifier M90: Klangwahl mit Techno und Hip-Hop, Equalizer, Eingang,
+      Nachtmodus mit Zeitplan, Stromsparmodus (v1.2.0)
 - [x] Status vom TV per Abo statt nur per Abfrage
 - [x] MAC Adresse wird vom TV erfragt, Scanner zeigt nur steuerbare TVs
 - [x] TV bleibt an, solange ein anderer Eingang läuft oder ein Video spielt
 - [x] Auflösung und Skalierung der Displays im Menü
 - [x] Lokale Signatur, damit Freigaben Updates überleben
-- [x] Tests (52) und Ausführung in der CI
+- [x] Tests (86) und Ausführung in der CI
 
 Nicht mehr vorhanden: der separate Daemon. Die App läuft selbst in der
 Menüleiste und übernimmt dessen Aufgabe.
