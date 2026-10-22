@@ -107,3 +107,105 @@ final class SpeakerAutomationTests: XCTestCase {
         XCTAssertEqual(automation.myEQ, SpeakerSoundLibrary.flatGains)
     }
 }
+
+/// Night schedule 22:00 until 08:00, checked at chosen times of day.
+final class NightScheduleBehaviorTests: XCTestCase {
+
+    private var suiteName = ""
+    private var defaults: UserDefaults!
+    private var calendar = Calendar.current
+
+    override func setUp() {
+        suiteName = "lgtvcompanion.tests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    private func at(_ hour: Int, _ minute: Int = 0) -> Date {
+        calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date())!
+    }
+
+    /// A fresh app instance on the same stored settings, like after a restart,
+    /// starting at the given time of day.
+    private func launch(at time: Date? = nil) -> SpeakerAutomation {
+        let start = time ?? at(12)
+        return SpeakerAutomation(speakers: EdifierSpeakerController(), defaults: defaults, clock: { start })
+    }
+
+    private func scheduled() -> SpeakerAutomation {
+        let automation = launch()
+        automation.setNightSchedule(startMinutes: 22 * 60, endMinutes: 8 * 60)
+        automation.setNightSchedule(enabled: true)
+        return automation
+    }
+
+    func testTurnsOnAtTenAndOffAtEightWhileRunning() {
+        let automation = scheduled()
+        automation.checkSchedule(now: at(21, 59))
+        XCTAssertFalse(automation.nightModeActive)
+        automation.checkSchedule(now: at(22, 0))
+        XCTAssertTrue(automation.nightModeActive)
+        automation.checkSchedule(now: at(7, 59))
+        XCTAssertTrue(automation.nightModeActive)
+        automation.checkSchedule(now: at(8, 0))
+        XCTAssertFalse(automation.nightModeActive)
+    }
+
+    /// The reported bug: Mac off over night, app starts at 08:30.
+    func testRestartAfterEightTurnsScheduledNightModeOff() {
+        let evening = scheduled()
+        evening.checkSchedule(now: at(23, 35))
+        XCTAssertTrue(evening.nightModeActive)
+
+        // Starting at 08:30 alone must turn it off, without waiting for a timer.
+        let morning = launch(at: at(8, 30))
+        XCTAssertFalse(morning.nightModeActive)
+    }
+
+    func testRestartDuringTheNightKeepsNightModeOn() {
+        let evening = scheduled()
+        evening.checkSchedule(now: at(23, 0))
+
+        let later = launch(at: at(2, 0))
+        XCTAssertTrue(later.nightModeActive)
+    }
+
+    func testManualOffAtNightIsNotUndoneUntilTheNextEvening() {
+        let automation = scheduled()
+        automation.checkSchedule(now: at(22, 0))
+        automation.setNightMode(false)
+
+        automation.checkSchedule(now: at(23, 0))
+        XCTAssertFalse(automation.nightModeActive, "a manual off must stick for the rest of the night")
+        let restarted = launch(at: at(1, 0))
+        XCTAssertFalse(restarted.nightModeActive, "also across a restart")
+
+        restarted.checkSchedule(now: at(9, 0))
+        restarted.checkSchedule(now: at(22, 0))
+        XCTAssertTrue(restarted.nightModeActive, "the next evening turns it on again")
+    }
+
+    func testManualOnDuringTheDayIsNotTurnedOffByTheSchedule() {
+        let automation = scheduled()
+        automation.checkSchedule(now: at(14, 0))
+        automation.setNightMode(true)
+        automation.checkSchedule(now: at(15, 0))
+        XCTAssertTrue(automation.nightModeActive)
+    }
+
+    func testFirstLaunchInsideTheWindowTurnsNightModeOn() {
+        let automation = scheduled()
+        automation.checkSchedule(now: at(23, 0))
+        XCTAssertTrue(automation.nightModeActive)
+    }
+
+    func testDisabledScheduleDoesNothing() {
+        let automation = launch()
+        automation.setNightSchedule(enabled: false)
+        automation.checkSchedule(now: at(23, 0))
+        XCTAssertFalse(automation.nightModeActive)
+    }
+}

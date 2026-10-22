@@ -54,6 +54,26 @@ Einschalten existiert nicht. Der Modus ist jetzt im Tab Speakers schaltbar.
 
 Die Einstellung liegt in den Lautsprechern, nicht in der App.
 
+## Nachtrag 22.10.2026: Nachtmodus ging morgens nicht aus
+
+Der Zeitplan schaltete nur bei einem Wechsel von Nacht auf Tag, den die
+laufende App selbst gesehen hat. Wurde der Mac über Nacht ausgeschaltet und
+startete die App um 08:30, gab es keinen Wechsel, der Nachtmodus blieb an.
+
+Jetzt merkt sich die App über Neustarts hinweg, ob der Zeitplan den
+Nachtmodus eingeschaltet hat und wie die letzte Prüfung ausfiel. Außerhalb des
+Fensters geht ein vom Zeitplan eingeschalteter Nachtmodus immer aus, auch
+direkt beim Start und nach dem Aufwachen. Von Hand gesetzte Zustände bleiben
+bis zur nächsten Kante unberührt.
+
+- [x] Abend an, Morgen aus bei laufender App (Test).
+- [x] Neustart um 08:30 schaltet aus (Test, der gemeldete Fall).
+- [x] Neustart mitten in der Nacht lässt ihn an (Test).
+- [x] Von Hand ausgeschaltet bleibt aus bis zum nächsten Abend, auch über
+      einen Neustart (Test).
+- [x] Tagsüber von Hand eingeschaltet bleibt an (Test).
+- [ ] Morgen früh beim Nutzer bestätigt.
+
 ## Implementation plan
 Phase 1: Protokoll (`EdifierProtocol`) und reine Logik (`SpeakerSound`), Tests.
 Phase 2: `EdifierSpeakerController`: Eingang, Preset, Kurve in Abständen von

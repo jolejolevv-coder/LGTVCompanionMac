@@ -44,6 +44,8 @@ public final class SpeakerAutomation: ObservableObject {
         static let subOutBeforeNight = "lgtvcompanion.speakers.subOutBeforeNight"
         static let wakeInputEnabled = "lgtvcompanion.speakers.wakeInputEnabled"
         static let wakeInput = "lgtvcompanion.speakers.wakeInput"
+        static let scheduleOwnsNight = "lgtvcompanion.speakers.scheduleOwnsNight"
+        static let lastScheduleVerdict = "lgtvcompanion.speakers.lastScheduleVerdict"
     }
 
     private let speakers: EdifierSpeakerController
@@ -60,11 +62,35 @@ public final class SpeakerAutomation: ObservableObject {
     private var wakeInputPending = false
 
     private var scheduleTimer: Timer?
-    private var lastScheduleVerdict: Bool?
 
-    public init(speakers: EdifierSpeakerController, defaults: UserDefaults = .standard) {
+    /// Whether the window was "night" at the previous check. Persisted, so
+    /// a restart or a night spent asleep does not look like a fresh start:
+    /// without it, a launch at 08:30 saw no change and left night mode on.
+    private var lastScheduleVerdict: Bool? {
+        get { defaults.object(forKey: Key.lastScheduleVerdict) as? Bool }
+        set {
+            if let newValue = newValue { defaults.set(newValue, forKey: Key.lastScheduleVerdict) }
+            else { defaults.removeObject(forKey: Key.lastScheduleVerdict) }
+        }
+    }
+
+    /// True if the schedule (not the user) turned the current night mode on.
+    /// Only then does the schedule turn it off again in the morning; a night
+    /// mode switched on by hand during the day stays on.
+    private var scheduleOwnsNight: Bool {
+        get { defaults.bool(forKey: Key.scheduleOwnsNight) }
+        set { defaults.set(newValue, forKey: Key.scheduleOwnsNight) }
+    }
+
+    /// Source of the current time. Replaceable so tests can run the
+    /// schedule at chosen times of day.
+    private let clock: () -> Date
+
+    public init(speakers: EdifierSpeakerController, defaults: UserDefaults = .standard,
+                clock: @escaping () -> Date = Date.init) {
         self.speakers = speakers
         self.defaults = defaults
+        self.clock = clock
 
         let bandCount = EdifierProtocol.eqBandFrequencies.count
         if let stored = defaults.array(forKey: Key.myEQ) as? [Double], stored.count == bandCount {
@@ -148,7 +174,14 @@ public final class SpeakerAutomation: ObservableObject {
 
     // MARK: - Night mode
 
+    /// Manual switch (menu, settings). Takes night mode away from the
+    /// schedule, so the next morning does not undo a manual choice.
     public func setNightMode(_ active: Bool) {
+        scheduleOwnsNight = false
+        applyNightMode(active)
+    }
+
+    private func applyNightMode(_ active: Bool) {
         guard active != nightModeActive else { return }
         nightModeActive = active
         defaults.set(active, forKey: Key.nightActive)
@@ -199,22 +232,29 @@ public final class SpeakerAutomation: ObservableObject {
         }
     }
 
-    /// Follows the schedule on its edges only: entering the window turns
-    /// night mode on, leaving it turns it off. In between, a manual toggle
-    /// stays as the user set it.
-    private func checkSchedule() {
-        guard nightScheduleEnabled, speakers.isEnabled else {
+    /// Night mode follows the schedule like this:
+    /// - Entering the window (also detected after a restart or after sleeping
+    ///   through the start) turns night mode on.
+    /// - Outside the window, a night mode the schedule turned on is turned
+    ///   off. This holds no matter how long the app was not running.
+    /// - A manual choice in between is left alone until the next edge.
+    func checkSchedule(now: Date? = nil) {
+        let now = now ?? clock()
+        guard nightScheduleEnabled else {
             lastScheduleVerdict = nil
             return
         }
-        let isNight = nightSchedule.contains(minutesOfDay: NightSchedule.minutesOfDay(for: Date()))
-        defer { lastScheduleVerdict = isNight }
+        let isNight = nightSchedule.contains(minutesOfDay: NightSchedule.minutesOfDay(for: now))
+        let wasNight = lastScheduleVerdict
+        lastScheduleVerdict = isNight
 
-        if let last = lastScheduleVerdict {
-            if isNight != last { setNightMode(isNight) }
-        } else if isNight {
-            // First check (launch, or schedule just changed) inside the window.
-            setNightMode(true)
+        if isNight {
+            guard wasNight != true, !nightModeActive else { return }
+            applyNightMode(true)
+            scheduleOwnsNight = true
+        } else if nightModeActive, scheduleOwnsNight {
+            scheduleOwnsNight = false
+            applyNightMode(false)
         }
     }
 
@@ -256,6 +296,8 @@ public final class SpeakerAutomation: ObservableObject {
     /// Makes sure the speakers listen to the configured input after the Mac
     /// woke up, whatever they were switched to in the meantime.
     public func macDidWake() {
+        // The schedule timer may have slept through the end of the night.
+        checkSchedule()
         guard speakers.isEnabled, wakeInputEnabled else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.wakeDelaySeconds) { [weak self] in
             guard let self = self else { return }
