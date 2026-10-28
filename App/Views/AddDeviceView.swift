@@ -95,9 +95,9 @@ struct AddDeviceView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text("1. Turn on your TV")
-                            Text("2. Go to Settings → All Settings → Connection → Network")
-                            Text("3. Select 'Wired Connection (Ethernet)' or 'Wi-Fi Connection'")
-                            Text("4. View the 'IP Address' and 'MAC Address'")
+                            Text("2. Open All Settings, then Connection, then Network")
+                            Text("3. Select Wired Connection (Ethernet) or Wi-Fi Connection")
+                            Text("4. Read the IP Address and MAC Address")
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)

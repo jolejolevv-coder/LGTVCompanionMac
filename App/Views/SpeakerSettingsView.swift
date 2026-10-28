@@ -2,8 +2,8 @@
 //  SpeakerSettingsView.swift
 //  LGTV Companion
 //
-//  Settings tab for the Edifier speakers: connection, sound and equalizer,
-//  night mode, behavior on wake.
+//  Settings tabs for the Edifier speakers: connection, sound and equalizer,
+//  behavior on wake and power (Speakers), night mode (Night Mode).
 //
 
 import LGTVCompanionShared
@@ -18,7 +18,6 @@ struct SpeakerSettingsTab: View {
             connectionSection
             if speakers.isEnabled {
                 soundSection
-                nightSection
                 wakeSection
                 powerSection
             }
@@ -34,11 +33,6 @@ struct SpeakerSettingsTab: View {
                 get: { speakers.isEnabled },
                 set: { speakers.setEnabled($0) }
             ))
-            .tint(.green)
-
-            Text("For Edifier M90. The volume keys change the speakers' own volume. The speakers allow one Bluetooth client at a time, so the Edifier phone app cannot connect while this app is; the app disconnects after 20 seconds without use. If the speakers are unreachable, the keys fall back to the Mac volume.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             if speakers.isEnabled {
                 LabeledContent("Status") {
@@ -51,6 +45,8 @@ struct SpeakerSettingsTab: View {
             }
         } header: {
             Text("Speakers")
+        } footer: {
+            Text("The volume keys change the speakers' volume, and fall back to the Mac volume if they are unreachable. The Edifier phone app cannot connect while this app is.")
         }
     }
 
@@ -89,18 +85,76 @@ struct SpeakerSettingsTab: View {
                 EqualizerEditor(gains: automation.myEQ) { index, gain in
                     automation.setMyEQBand(index: index, gainDB: gain)
                 }
-
-                Text("Classic, Monitor and Dynamic are built into the speakers. Techno, Hip-Hop and My EQ are written into the speakers' Custom slot. Moving a slider switches to My EQ. Each band ranges from -3 to +3 dB.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         } header: {
             Text("Sound")
+        } footer: {
+            Text("Classic, Monitor and Dynamic are built into the speakers; Techno, Hip-Hop and My EQ use their Custom slot. Each band ranges from -3 to +3 dB.")
         }
         .onAppear { speakers.refresh() }
     }
 
-    // MARK: - Night mode
+    // MARK: - Power
+
+    private var powerSection: some View {
+        Section {
+            Toggle("Speakers go to standby on their own", isOn: Binding(
+                get: { speakers.powerSaveEnabled ?? false },
+                set: { speakers.setPowerSave($0) }
+            ))
+            .disabled(speakers.powerSaveEnabled == nil)
+        } header: {
+            Text("Power")
+        } footer: {
+            Text("On: the speakers go to standby after a while without sound and do not wake with the Mac. Off: they stay on, at the cost of idle power.")
+        }
+    }
+
+    // MARK: - Wake
+
+    private var wakeSection: some View {
+        Section {
+            Toggle("Switch the speakers' input when the Mac wakes", isOn: Binding(
+                get: { automation.wakeInputEnabled },
+                set: { automation.setWakeInput(enabled: $0) }
+            ))
+
+            Picker("Input", selection: Binding(
+                get: { automation.wakeInput },
+                set: { automation.setWakeInput($0) }
+            )) {
+                ForEach(EdifierInput.allCases) { input in
+                    Text(input.label).tag(input)
+                }
+            }
+            .disabled(!automation.wakeInputEnabled)
+        } header: {
+            Text("When the Mac Wakes")
+        } footer: {
+            Text("Makes sure the Mac's sound comes out after waking, whatever the speakers were switched to.")
+        }
+    }
+}
+
+struct NightModeSettingsTab: View {
+    @ObservedObject var speakers: EdifierSpeakerController
+    @ObservedObject var automation: SpeakerAutomation
+
+    var body: some View {
+        Form {
+            if speakers.isEnabled {
+                nightSection
+            } else {
+                Section {
+                    Text("Turn on speaker control in the Speakers tab to use night mode.")
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Night Mode")
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
 
     private var nightSection: some View {
         Section {
@@ -108,7 +162,6 @@ struct SpeakerSettingsTab: View {
                 get: { automation.nightModeActive },
                 set: { automation.setNightMode($0) }
             ))
-            .tint(.indigo)
 
             Stepper(value: Binding(
                 get: { automation.nightVolumeLimit },
@@ -129,11 +182,10 @@ struct SpeakerSettingsTab: View {
                 }
             }
 
-            Toggle("Turn on automatically", isOn: Binding(
+            Toggle("Switch on by schedule", isOn: Binding(
                 get: { automation.nightScheduleEnabled },
                 set: { automation.setNightSchedule(enabled: $0) }
             ))
-            .tint(.indigo)
 
             if automation.nightScheduleEnabled {
                 DatePicker("From", selection: timeBinding(
@@ -146,12 +198,10 @@ struct SpeakerSettingsTab: View {
                     set: { automation.setNightSchedule(startMinutes: automation.nightSchedule.startMinutes, endMinutes: $0) }
                 ), displayedComponents: .hourAndMinute)
             }
-
-            Text("Night mode caps the volume and sets the subwoofer level. Turning it off removes the cap and restores the previous subwoofer level.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         } header: {
             Text("Night Mode")
+        } footer: {
+            Text("Night mode caps the volume and sets the subwoofer level. Turning it off removes the cap and restores the previous subwoofer level.")
         }
     }
 
@@ -164,53 +214,6 @@ struct SpeakerSettingsTab: View {
             },
             set: { set(NightSchedule.minutesOfDay(for: $0)) }
         )
-    }
-
-    // MARK: - Power
-
-    private var powerSection: some View {
-        Section {
-            Toggle("Power saving (auto standby)", isOn: Binding(
-                get: { speakers.powerSaveEnabled ?? false },
-                set: { speakers.setPowerSave($0) }
-            ))
-            .tint(.green)
-            .disabled(speakers.powerSaveEnabled == nil)
-
-            Text("On: the speakers go to standby by themselves after a while without sound, and then do not wake when the Mac does; they have to be switched on by hand. Off: they stay on and play at once, at the cost of idle power. The setting is stored in the speakers.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            Text("Power")
-        }
-    }
-
-    // MARK: - Wake
-
-    private var wakeSection: some View {
-        Section {
-            Toggle("Switch the speakers' input when the Mac wakes", isOn: Binding(
-                get: { automation.wakeInputEnabled },
-                set: { automation.setWakeInput(enabled: $0) }
-            ))
-            .tint(.green)
-
-            Picker("Input", selection: Binding(
-                get: { automation.wakeInput },
-                set: { automation.setWakeInput($0) }
-            )) {
-                ForEach(EdifierInput.allCases) { input in
-                    Text(input.label).tag(input)
-                }
-            }
-            .disabled(!automation.wakeInputEnabled)
-
-            Text("Makes sure the Mac's sound comes out after waking, whatever the speakers were switched to in the meantime.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            Text("When the Mac Wakes")
-        }
     }
 }
 

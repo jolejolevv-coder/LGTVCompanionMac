@@ -52,8 +52,12 @@ struct DeviceDetailView: View {
                     deviceInfoSection
                 }
 
-                Section("Automation") {
+                Section {
                     automationSettingsSection
+                } header: {
+                    Text("Automation")
+                } footer: {
+                    Text("Screen-off keeps the TV running so it resumes at once. With a Mac input set, the TV stays on while it shows another input.")
                 }
 
                 Section("Network") {
@@ -160,7 +164,6 @@ struct DeviceDetailView: View {
             TextField("Name", text: $device.name)
 
             Toggle("Enabled", isOn: $device.enabled)
-                .tint(.green)
                 .help("Enable or disable this TV")
 
             LabeledContent("Pairing") {
@@ -177,17 +180,11 @@ struct DeviceDetailView: View {
     
     private var automationSettingsSection: some View {
         Group {
-            Toggle(isOn: $device.autoManage) {
-                Text("Follow Mac sleep & wake")
-                Text("Turns the TV off when the Mac sleeps or shuts down, and back on when it wakes.")
-            }
-            .tint(.green)
+            Toggle("Follow Mac sleep and wake", isOn: $device.autoManage)
+                .help("Turns the TV off when the Mac sleeps or shuts down, and back on when it wakes")
 
-            Toggle(isOn: $device.useScreenOff) {
-                Text("Use screen-off instead of power-off")
-                Text("The picture turns off but the TV stays on — it resumes instantly without rebooting. Recommended for monitor use.")
-            }
-            .tint(.green)
+            Toggle("Use screen-off instead of power-off", isOn: $device.useScreenOff)
+                .help("The picture turns off but the TV stays on and resumes instantly. Recommended for monitor use.")
 
             LabeledContent("Mac input") {
                 HStack(spacing: 8) {
@@ -200,6 +197,7 @@ struct DeviceDetailView: View {
                     Button(device.macInputAppId == nil ? "Detect" : "Re-detect") {
                         detectMacInput()
                     }
+                    .help("Press while the TV shows your Mac")
                     .disabled(isDetecting || !device.enabled)
                     if device.macInputAppId != nil {
                         Button("Clear") {
@@ -211,9 +209,6 @@ struct DeviceDetailView: View {
                 }
             }
 
-            Text("While set, the TV won't auto power-off whenever it's showing another input (e.g. a console on a different HDMI). Press Detect while the TV is showing your Mac.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 

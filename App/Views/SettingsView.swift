@@ -5,6 +5,7 @@
 //  Application settings view
 //
 
+import Combine
 import LGTVCompanionShared
 import ServiceManagement
 import SwiftUI
@@ -21,11 +22,16 @@ struct SettingsView: View {
     @State private var launchAtLoginNeedsApproval = false
     @State private var mediaKeysEnabled = false
     @State private var confirmingReset = false
+    /// The tab shown when the window opens: the one used last.
+    @AppStorage("lgtvcompanion.ui.settingsTab") private var selectedTab = SettingsTab.general.rawValue
 
     /// Apps currently holding a display-sleep assertion. Refreshed live while
     /// the settings window is open so a starting video shows up on its own.
     @State private var displaySleepApps: [AssertingApp] = []
 
+    private static let windowWidth: CGFloat = 520
+    private static let idleTimeoutRange: ClosedRange<Double> = 60...3600
+    private static let idleTimeoutStep: Double = 60
     private static let aboutIconSize: CGFloat = 96
     private static let assertionRefreshSeconds: TimeInterval = 3
     private let assertionRefreshTimer = Timer.publish(
@@ -41,41 +47,52 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             generalSettingsTab
                 .tabItem {
                     Label("General", systemImage: "gearshape")
                 }
-            
+                .tag(SettingsTab.general.rawValue)
+
             automationSettingsTab
                 .tabItem {
                     Label("Automation", systemImage: "bolt")
                 }
+                .tag(SettingsTab.automation.rawValue)
 
             SpeakerSettingsTab(speakers: DeviceManager.shared.speakers,
                                automation: DeviceManager.shared.speakerAutomation)
                 .tabItem {
                     Label("Speakers", systemImage: "hifispeaker.2")
                 }
-            
+                .tag(SettingsTab.speakers.rawValue)
+
+            NightModeSettingsTab(speakers: DeviceManager.shared.speakers,
+                                 automation: DeviceManager.shared.speakerAutomation)
+                .tabItem {
+                    Label("Night Mode", systemImage: "moon")
+                }
+                .tag(SettingsTab.nightMode.rawValue)
+
             aboutTab
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
+                .tag(SettingsTab.about.rawValue)
         }
-        .frame(width: 550, height: 400)
+        // The height follows the content of the selected tab.
+        .frame(width: Self.windowWidth)
         .onAppear {
             loadSettings()
         }
     }
-    
+
     // MARK: - Tabs
     
     private var generalSettingsTab: some View {
         Form {
             Section {
                 Toggle("Launch at login", isOn: $launchAtLogin)
-                    .tint(.green)
                     .onChange(of: launchAtLogin) { _, newValue in
                         updateLaunchAtLogin(newValue)
                     }
@@ -95,16 +112,16 @@ struct SettingsView: View {
                     }
                 }
 
-                Toggle("Enable power event monitoring", isOn: .constant(deviceManager.isMonitoringPowerEvents))
-                    .disabled(true)
-                    .help("Monitoring is automatically enabled when devices are set to auto-manage")
+                LabeledContent("Power event monitoring",
+                               value: deviceManager.isMonitoringPowerEvents ? "On" : "Off")
             } header: {
                 Text("Startup")
+            } footer: {
+                Text("The app watches sleep, wake and shutdown to switch the TVs.")
             }
             
             Section {
-                Toggle("Keyboard volume keys control the TV", isOn: $mediaKeysEnabled)
-                    .tint(.green)
+                Toggle("Volume keys control the TV and speakers", isOn: $mediaKeysEnabled)
                     .onChange(of: mediaKeysEnabled) { _, newValue in
                         // Only act on a real user toggle. loadSettings() also
                         // moves this value (false → stored), which would
@@ -118,10 +135,10 @@ struct SettingsView: View {
                     get: { deviceManager.softwareVolumeEnabled },
                     set: { deviceManager.setSoftwareVolumeEnabled($0) }
                 ))
-                .tint(.green)
-
             } header: {
                 Text("Volume Keys")
+            } footer: {
+                Text("On a TV output with a fixed level, such as optical, the keys lower the Mac's sound instead.")
             }
 
             PermissionsSection()
@@ -143,6 +160,8 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Advanced")
+            } footer: {
+                Text("Removes all TVs and puts every option back to its default.")
             }
         }
         .formStyle(.grouped)
@@ -151,42 +170,36 @@ struct SettingsView: View {
     private var automationSettingsTab: some View {
         Form {
             Section {
-                Toggle("Enable User Idle Mode", isOn: $userIdleEnabled)
-                    .tint(.green)
+                Toggle("Switch TVs off when the Mac is idle", isOn: $userIdleEnabled)
                     .onChange(of: userIdleEnabled) { _, newValue in
                         updateUserIdleSettings()
                     }
-                
+
                 if userIdleEnabled {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Idle timeout:")
-                            Spacer()
-                            Text(formatTimeout(userIdleTimeout))
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Slider(value: $userIdleTimeout, in: 60...3600, step: 60)
-                            .onChange(of: userIdleTimeout) { _, _ in
-                                updateUserIdleSettings()
-                            }
-                        
-                        Text("TVs will turn off after this period of inactivity and turn back on when you return")
-                            .font(.caption)
+                    LabeledContent("Idle timeout") {
+                        Text(formatTimeout(userIdleTimeout))
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.leading, 20)
+
+                    Slider(value: $userIdleTimeout, in: Self.idleTimeoutRange, step: Self.idleTimeoutStep) {
+                        Text("Idle timeout")
+                    }
+                    .labelsHidden()
+                    .onChange(of: userIdleTimeout) { _, _ in
+                        updateUserIdleSettings()
+                    }
                 }
             } header: {
                 Text("User Idle Detection")
+            } footer: {
+                Text("The TVs switch off after this much inactivity and on again when you return.")
             }
 
             if userIdleEnabled {
                 Section {
                     let apps = keepAwakeApps()
                     if apps.isEmpty {
-                        Text("No app is keeping the screen awake right now. Start a video (e.g. YouTube) and it will appear here so you can enable it.")
-                            .font(.caption)
+                        Text("No app is keeping the screen awake right now. Start a video and it appears here.")
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(apps) { app in
@@ -203,31 +216,24 @@ struct SettingsView: View {
                                     }
                                 }
                             }
-                            .tint(.green)
                         }
                     }
                 } header: {
                     Text("Keep TV On During Playback")
                 } footer: {
-                    Text("Enabled apps keep the TV on while they play video, even without mouse or keyboard activity. Apps holding the screen awake right now appear automatically.")
-                        .font(.caption2)
+                    Text("Enabled apps keep the TV on while they play video, even without mouse or keyboard activity.")
                 }
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("System Sleep/Wake", systemImage: "powersleep")
-                    Label("Display Sleep/Wake", systemImage: "display")
-                    Label("System Shutdown/Restart", systemImage: "power")
-                    Label("Display Configuration Changes", systemImage: "rectangle.3.group")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Label("System sleep and wake", systemImage: "powersleep")
+                Label("Display sleep and wake", systemImage: "display")
+                Label("Shutdown and restart", systemImage: "power")
+                Label("Display configuration changes", systemImage: "rectangle.3.group")
             } header: {
                 Text("Monitored Events")
             } footer: {
-                Text("These events are automatically monitored for devices with 'Automatically manage' enabled")
-                    .font(.caption2)
+                Text("These apply to TVs that follow the Mac's sleep and wake.")
             }
         }
         .formStyle(.grouped)
@@ -268,8 +274,6 @@ struct SettingsView: View {
                     .multilineTextAlignment(.center)
             }
             
-            Spacer()
-            
             HStack(spacing: 16) {
                 Link(destination: AppInfo.repositoryURL) {
                     Label("GitHub", systemImage: "link")
@@ -281,8 +285,8 @@ struct SettingsView: View {
             }
             .font(.caption)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
     }
     
     // MARK: - Helpers
@@ -387,4 +391,9 @@ struct LaunchAtLogin {
             try SMAppService.mainApp.unregister()
         }
     }
+}
+
+/// The tabs of the Settings window. The raw value is what is remembered.
+enum SettingsTab: String {
+    case general, automation, speakers, nightMode, about
 }
