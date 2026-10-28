@@ -139,6 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Clean up
+        // The volume level is saved with a delay; don't lose the last change.
+        DeviceManager.shared.flushPendingSettings()
     }
 }

@@ -502,6 +502,7 @@ public class DeviceManager: ObservableObject {
                 // The tap does not reliably survive sleep. Rebuild it.
                 await MainActor.run {
                     self.softwareVolumeController?.stop()
+                    self.softwareVolumeController?.refreshOutputDevice()
                     self.syncSoftwareVolume()
                     self.speakerAutomation.macDidWake()
                 }
@@ -771,13 +772,13 @@ public class DeviceManager: ObservableObject {
     public func setSoftwareVolume(level: Double) {
         softwareVolumeLevel = SoftwareVolume.clamp(level)
         softwareVolumeMuted = false
-        saveSettings()
+        saveSettingsSoon()
         syncSoftwareVolume()
     }
 
     public func toggleSoftwareMute() {
         softwareVolumeMuted.toggle()
-        saveSettings()
+        saveSettingsSoon()
         syncSoftwareVolume()
     }
 
@@ -832,7 +833,7 @@ public class DeviceManager: ObservableObject {
         let wanted = SoftwareVolume.shouldControl(
             enabled: softwareVolumeEnabled,
             tvCanAdjustVolume: tvCanAdjustVolume,
-            outputIsDigitalDisplay: SoftwareVolumeController.defaultOutputIsDigitalDisplay()
+            outputIsDigitalDisplay: controller.outputIsDigitalDisplay
         )
         guard wanted else {
             controller.stop()
@@ -886,7 +887,30 @@ public class DeviceManager: ObservableObject {
         }
     }
 
+    /// How long the volume keys wait for a further press before the level is
+    /// written to the preferences. Holding a key repeats ~15 times a second.
+    private static let settingsSaveDebounceSeconds: TimeInterval = 1
+    private var pendingSettingsSave: DispatchWorkItem?
+
+    /// Debounced saveSettings() for the volume keys and the menu slider.
+    /// Main thread.
+    private func saveSettingsSoon() {
+        pendingSettingsSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.saveSettings() }
+        pendingSettingsSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settingsSaveDebounceSeconds, execute: work)
+    }
+
+    /// Writes a debounced save that has not run yet. Call before quitting.
+    public func flushPendingSettings() {
+        guard pendingSettingsSave != nil else { return }
+        saveSettings()
+    }
+
     private func saveSettings() {
+        // Whatever was waiting is part of this write.
+        pendingSettingsSave?.cancel()
+        pendingSettingsSave = nil
         var settings: [String: Any] = [
             "userIdleEnabled": userIdleEnabled,
             "userIdleTimeout": userIdleTimeout,
