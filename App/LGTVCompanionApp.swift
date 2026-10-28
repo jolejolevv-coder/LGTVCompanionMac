@@ -12,6 +12,7 @@ import SwiftUI
 struct LGTVCompanionApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var deviceManager = DeviceManager.shared
+    @StateObject private var router = MainWindowRouter.shared
     
     var body: some Scene {
         // One main window, opened on request. It does not open at launch.
@@ -33,6 +34,10 @@ struct LGTVCompanionApp: App {
                     )
                 }
             }
+            NewTVCommands()
+            TVCommands(deviceManager: deviceManager, router: router)
+            SpeakerCommands(speakers: deviceManager.speakers,
+                            automation: deviceManager.speakerAutomation)
         }
         
         Settings {

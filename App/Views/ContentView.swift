@@ -10,6 +10,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var deviceManager: DeviceManager
+    @ObservedObject private var router = MainWindowRouter.shared
     @State private var selectedDevice: WebOSDevice?
     @State private var showingAddDevice = false
     @State private var showingScanner = false
@@ -61,6 +62,19 @@ struct ContentView: View {
         .sheet(isPresented: $showingScanner) {
             DeviceScannerView()
                 .environmentObject(deviceManager)
+        }
+        .onChange(of: selectedDevice) { _, device in
+            router.selectedDeviceID = device?.id
+        }
+        .onChange(of: router.pendingSheet, initial: true) { _, sheet in
+            // A menu command asked for a sheet; the window may have been
+            // created just for it.
+            guard let sheet else { return }
+            router.pendingSheet = nil
+            switch sheet {
+            case .scan: showingScanner = true
+            case .add: showingAddDevice = true
+            }
         }
         .background(WindowAccessor { MainWindowGate.shared.windowAttached($0) })
         .task {
