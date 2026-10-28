@@ -10,12 +10,12 @@ final class SpeakerAutomationTests: XCTestCase {
     private var suiteName = ""
     private var defaults: UserDefaults!
 
-    override func setUp() {
+    override func setUp() async throws {
         suiteName = "lgtvcompanion.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
@@ -117,12 +117,12 @@ final class NightScheduleBehaviorTests: XCTestCase {
     private var defaults: UserDefaults!
     private var calendar = Calendar.current
 
-    override func setUp() {
+    override func setUp() async throws {
         suiteName = "lgtvcompanion.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 

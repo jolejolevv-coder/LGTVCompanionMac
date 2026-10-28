@@ -194,7 +194,9 @@ public class WakeOnLAN {
         var a = in_addr(s_addr: addr)
         var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         inet_ntop(AF_INET, &a, &buf, socklen_t(INET_ADDRSTRLEN))
-        return String(cString: buf)
+        // Up to the terminating zero of the C string.
+        let bytes = buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     /// Validate MAC address format

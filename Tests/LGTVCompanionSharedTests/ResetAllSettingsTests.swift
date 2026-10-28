@@ -20,13 +20,13 @@ final class ResetAllSettingsTests: XCTestCase {
     private var defaults: UserDefaults!
     private var keyStore: MemoryKeyStore!
 
-    override func setUp() {
+    override func setUp() async throws {
         suiteName = "lgtvcompanion.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
         keyStore = MemoryKeyStore()
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
