@@ -17,13 +17,17 @@ geprüft. Ergebnis und Plan stehen in `specs/features/bama-review-improvements.m
 ## Nächste Schritte
 1. Plan ist freigegeben (28.10.2026). Nutzer will jede Phase in einer eigenen
    Sitzung, um Tokens zu sparen.
-2. Phase 1 Stabilität: `TVTransport` Protokoll plus ein laufender
+2. Erledigt 28.10.: Phase 1 Stabilität (merge 0de3cb7, installiert). Inhalt: `TVTransport` Protokoll plus ein laufender
    connect und register pro Client (`Shared/DeviceManager.swift:268-294`,
    `Shared/WebOSClient.swift`), `isPaired = false` in den `.failed` und
    `.cancelled` Zweigen (`WebOSClient.swift:235-246`), Retry nur bei
    transienten Fehlern, `startPowerEventMonitoring` in
    `applicationDidFinishLaunching`, übrige Punkte der Liste je ein Commit.
-3. Phasen 2 bis 5 laut Spec.
+3. Jetzt Phase 2, danach 3 bis 5 laut Spec, alles in dieser Sitzung (Nutzer:
+   "mach dann hier"). Phase 3 zusätzlich: Pair Again in DeviceDetailView
+   über DeviceManager und TVSession führen.
+4. Von Hand offen nach Phase 1: Lautstärketasten, Sleep und Wake nach
+   Neustart, Launch at login.
 
 ## Offene Fragen und bekannte Punkte
 - Nutzer bestätigt noch, dass der Nachtmodus morgens um 8 Uhr ausgeht.
