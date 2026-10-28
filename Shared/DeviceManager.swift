@@ -652,23 +652,31 @@ public class DeviceManager: ObservableObject {
     /// Called on the main thread (the event-tap source runs on the main run loop).
     @discardableResult
     private func handleMediaKey(_ key: MediaKeyEvent) -> Bool {
-        // Real speaker control beats everything else: it changes the level in
-        // the speakers themselves, for every source and without digital loss.
-        // If the speakers were just found unreachable, fall through.
-        if speakers.canHandleVolumeKeys {
+        // See VolumeKeyRoute.route for the order. Real speaker control beats
+        // everything else: it changes the level in the speakers themselves,
+        // for every source and without digital loss. If the speakers were just
+        // found unreachable, the route falls through to the next target.
+        let device = devices.first(where: { $0.enabled })
+        let route = VolumeKeyRoute.route(for: key,
+                                         speakersCanHandleVolumeKeys: speakers.canHandleVolumeKeys,
+                                         hasEnabledTV: device != nil,
+                                         softwareVolumeActive: softwareVolumeActive,
+                                         tvCanAdjustVolume: tvCanAdjustVolume)
+        switch route {
+        case .speakers:
             speakers.handleVolumeKey(key)
             return true
-        }
-
-        guard let device = devices.first(where: { $0.enabled }) else { return false }
-
-        if softwareVolumeActive {
+        case .softwareVolume:
             handleSoftwareVolumeKey(key)
             return true
+        case .passThrough:
+            // No enabled TV, or the TV cannot change the volume and the Mac's
+            // sound is not going to a display: the keys belong to macOS.
+            return false
+        case .tv:
+            break
         }
-        // The TV cannot change the volume and the Mac's sound is not going to
-        // a display (headphones, built-in speakers): the keys belong to macOS.
-        if tvCanAdjustVolume == false { return false }
+        guard let device else { return false }
 
         switch key {
         case .volumeUp:
