@@ -16,7 +16,7 @@ public enum DeviceManagerError: Error {
 }
 
 /// Live status snapshot of a TV, used by the menu bar UI.
-public struct DeviceStatus: Equatable {
+public struct DeviceStatus: Equatable, Sendable {
     public var powerState: String?   // "Active", "Screen Off", "Active Standby", nil = unreachable
     public var volume: Int?
     public var muted: Bool?
@@ -36,6 +36,10 @@ public struct DeviceStatus: Equatable {
     public var isScreenOn: Bool { powerState == "Active" }
 }
 
+/// Main actor: the published state, the hub logic and every callback into it
+/// run on the main thread. The async methods suspend while they wait for the
+/// TV; the sockets themselves live on `WebOSClient`'s own queue.
+@MainActor
 public class DeviceManager: ObservableObject {
     /// Shared instance so the AppDelegate can reach the manager during
     /// shutdown handling.
@@ -68,7 +72,7 @@ public class DeviceManager: ObservableObject {
     /// app controls itself: software volume or speaker volume (level 0...1,
     /// muted). The keys are swallowed then, so the app shows its own display. Not called for the menu
     /// slider, which already shows the value.
-    public var onVolumeKeyFeedback: ((Double, Bool) -> Void)?
+    public var onVolumeKeyFeedback: (@MainActor (Double, Bool) -> Void)?
 
     /// Bluetooth control of Edifier speakers (real volume, Sub Out). Idle
     /// until switched on in Settings.
@@ -195,14 +199,14 @@ public class DeviceManager: ObservableObject {
         // on every connection (previously the key was written to a separate
         // UserDefaults key that was never read back).
         client.onPairingKeyUpdated = { [weak self] deviceId, key in
-            DispatchQueue.main.async {
+            MainThread.async { [weak self] in
                 self?.storePairingKey(key, for: deviceId)
             }
         }
         // Volume and power changes pushed by the TV, so the UI and the
         // volume routing follow at once instead of at the next poll.
         client.onStatusUpdate = { [weak self] deviceId, update in
-            DispatchQueue.main.async {
+            MainThread.async { [weak self] in
                 self?.applyStatusUpdate(update, for: deviceId)
             }
         }
@@ -274,7 +278,7 @@ public class DeviceManager: ObservableObject {
             }
         }
         if let lastWakeError = lastWakeError {
-            await recordFailure(of: "Wake on LAN", error: lastWakeError, device: device)
+            recordFailure(of: "Wake on LAN", error: lastWakeError, device: device)
             throw lastWakeError
         }
     }
@@ -306,10 +310,10 @@ public class DeviceManager: ObservableObject {
     ) async throws -> T {
         do {
             let result = try await runOnConnectedClient(for: device, operation)
-            if reportsFailure { await clearLastError() }
+            if reportsFailure { clearLastError() }
             return result
         } catch {
-            if reportsFailure { await recordFailure(of: "TV command for \(device.name)", error: error, device: device) }
+            if reportsFailure { recordFailure(of: "TV command for \(device.name)", error: error, device: device) }
             throw error
         }
     }
@@ -318,8 +322,7 @@ public class DeviceManager: ObservableObject {
         for device: WebOSDevice,
         _ operation: (WebOSClient) async throws -> T
     ) async throws -> T {
-        // Both dictionaries are main-actor state.
-        let (client, session) = await MainActor.run { self.clientAndSession(for: device) }
+        let (client, session) = clientAndSession(for: device)
 
         // Concurrent callers share one connect/register (see TVSession).
         try await session.ensureReady()
@@ -335,21 +338,17 @@ public class DeviceManager: ObservableObject {
         }
     }
 
-    private func recordFailure(of action: String, error: Error, device: WebOSDevice) async {
+    private func recordFailure(of action: String, error: Error, device: WebOSDevice) {
         let cause = error.localizedDescription
         Log.tv.error("\(action, privacy: .public) failed: \(cause, privacy: .public)")
         let message = TVFailureText.message(for: error, tvName: device.name)
-        await MainActor.run {
-            self.lastError = message
-            self.lastErrorDeviceID = device.id
-        }
+        lastError = message
+        lastErrorDeviceID = device.id
     }
 
-    private func clearLastError() async {
-        await MainActor.run {
-            if self.lastError != nil { self.lastError = nil }
-            if self.lastErrorDeviceID != nil { self.lastErrorDeviceID = nil }
-        }
+    private func clearLastError() {
+        if lastError != nil { lastError = nil }
+        if lastErrorDeviceID != nil { lastErrorDeviceID = nil }
     }
 
     // MARK: - Live Status & Direct Controls (Menu Bar)
@@ -365,18 +364,12 @@ public class DeviceManager: ObservableObject {
         }) {
             status = result
         }
-        let final = status
-        await MainActor.run {
-            self.deviceStatuses[device.id] = final
-            self.noteVolumeAdjustable(final.volumeAdjustable, for: device)
-        }
+        deviceStatuses[device.id] = status
+        noteVolumeAdjustable(status.volumeAdjustable, for: device)
     }
 
     public func refreshAllStatuses() async {
-        // Snapshot the @Published devices array on the main thread. This runs
-        // from a background Task (keepalive timer / warm-up), and enumerating
-        // the array off-main while the UI mutates it on main is a data race.
-        let snapshot = await MainActor.run { self.devices.filter { $0.enabled } }
+        let snapshot = devices.filter { $0.enabled }
         await withTaskGroup(of: Void.self) { group in
             for device in snapshot {
                 group.addTask { await self.refreshStatus(for: device) }
@@ -402,12 +395,12 @@ public class DeviceManager: ObservableObject {
         guard device.enabled else {
             throw DeviceManagerError.deviceDisabled
         }
-        let session = await MainActor.run { self.clientAndSession(for: device).session }
+        let session = clientAndSession(for: device).session
         do {
             try await session.reconnect()
-            await clearLastError()
+            clearLastError()
         } catch {
-            await recordFailure(of: "Pairing \(device.name)", error: error, device: device)
+            recordFailure(of: "Pairing \(device.name)", error: error, device: device)
             throw error
         }
     }
@@ -421,7 +414,7 @@ public class DeviceManager: ObservableObject {
     /// Full power-off, regardless of the useScreenOff setting.
     public func fullPowerOff(_ device: WebOSDevice) async throws {
         try await withConnectedClient(for: device) { try await $0.powerOff() }
-        await MainActor.run { self.deviceStatuses[device.id] = DeviceStatus() }
+        deviceStatuses[device.id] = DeviceStatus()
     }
 
     public func setVolume(_ volume: Int, for device: WebOSDevice) async throws {
@@ -504,8 +497,7 @@ public class DeviceManager: ObservableObject {
     ///   otherwise the TV would stay on behind a dark screen).
     public func powerOffManagedDevices(fullOff: Bool = false) async {
         // Skip TVs currently showing a non-Mac input (e.g. a console).
-        // `devices` is published on the main actor; read it there.
-        let managed = await MainActor.run { self.managedDevices }
+        let managed = managedDevices
         let targets = await devicesShowingMacInput(managed)
         await withTaskGroup(of: Void.self) { group in
             for device in targets {
@@ -572,12 +564,10 @@ public class DeviceManager: ObservableObject {
 
             case .systemDidWake, .displayDidWake:
                 // The tap does not reliably survive sleep. Rebuild it.
-                await MainActor.run {
-                    self.softwareVolumeController?.stop()
-                    self.softwareVolumeController?.refreshOutputDevice()
-                    self.syncSoftwareVolume()
-                    self.speakerAutomation.macDidWake()
-                }
+                softwareVolumeController?.stop()
+                softwareVolumeController?.refreshOutputDevice()
+                syncSoftwareVolume()
+                speakerAutomation.macDidWake()
                 await self.powerOnAll(targets)
             }
             completion()
@@ -788,11 +778,7 @@ public class DeviceManager: ObservableObject {
 
         Task {
             while true {
-                let step = await MainActor.run { () -> Int in
-                    if self.pendingVolumeSteps > 0 { self.pendingVolumeSteps -= 1; return 1 }
-                    if self.pendingVolumeSteps < 0 { self.pendingVolumeSteps += 1; return -1 }
-                    return 0
-                }
+                let step = self.takeNextVolumeStep()
                 if step == 0 { break }
 
                 do {
@@ -803,7 +789,7 @@ public class DeviceManager: ObservableObject {
                 } catch {
                     // TV unreachable — drop whatever is still queued; replaying
                     // stale key presses seconds later would be worse.
-                    await MainActor.run { self.pendingVolumeSteps = 0 }
+                    self.pendingVolumeSteps = 0
                     break
                 }
             }
@@ -811,17 +797,22 @@ public class DeviceManager: ObservableObject {
             // One status refresh after the burst, not one per key press.
             await self.publishAudioStatus(for: device)
 
-            await MainActor.run {
-                self.volumeWorkerActive = false
-                // Presses that arrived while the status was being published
-                // restart the worker so they aren't stranded in the counter.
-                if self.pendingVolumeSteps != 0 {
-                    let d = self.pendingVolumeSteps > 0 ? 1 : -1
-                    self.pendingVolumeSteps -= d
-                    self.enqueueVolumeStep(d, for: device)
-                }
+            self.volumeWorkerActive = false
+            // Presses that arrived while the status was being published
+            // restart the worker so they aren't stranded in the counter.
+            if self.pendingVolumeSteps != 0 {
+                let d = self.pendingVolumeSteps > 0 ? 1 : -1
+                self.pendingVolumeSteps -= d
+                self.enqueueVolumeStep(d, for: device)
             }
         }
+    }
+
+    /// Takes one outstanding step off the counter: +1, -1, or 0 when empty.
+    private func takeNextVolumeStep() -> Int {
+        if pendingVolumeSteps > 0 { pendingVolumeSteps -= 1; return 1 }
+        if pendingVolumeSteps < 0 { pendingVolumeSteps += 1; return -1 }
+        return 0
     }
 
     /// Fetches volume/mute once and publishes it so the menu-bar slider follows.
@@ -829,13 +820,11 @@ public class DeviceManager: ObservableObject {
         guard let audio = try? await withConnectedClient(for: device, reportsFailure: false, { try await $0.getAudioStatus() }) else {
             return
         }
-        await MainActor.run {
-            var status = self.deviceStatuses[device.id] ?? DeviceStatus()
-            status.volume = audio.volume
-            status.muted = audio.muted
-            if status.powerState == nil { status.powerState = "Active" }
-            self.deviceStatuses[device.id] = status
-        }
+        var status = deviceStatuses[device.id] ?? DeviceStatus()
+        status.volume = audio.volume
+        status.muted = audio.muted
+        if status.powerState == nil { status.powerState = "Active" }
+        deviceStatuses[device.id] = status
     }
 
     // MARK: - Software Volume (Mac-side, for fixed-level TV outputs)
@@ -888,7 +877,7 @@ public class DeviceManager: ObservableObject {
 
         speakers.setVolume(SoftwareVolume.handOverVolume(speakerVolume: speakerVolume,
                                                          softwareLevel: softwareVolumeLevel))
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.handOverDelaySeconds) { [weak self] in
+        MainThread.asyncAfter(seconds: Self.handOverDelaySeconds) { [weak self] in
             self?.setSoftwareVolume(level: 1)
         }
     }

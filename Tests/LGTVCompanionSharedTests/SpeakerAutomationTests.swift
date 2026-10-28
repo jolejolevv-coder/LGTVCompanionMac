@@ -4,17 +4,18 @@ import XCTest
 /// The speaker controller stays switched off in these tests (its "enabled"
 /// flag lives in the real defaults and is not set there by the tests), so no
 /// Bluetooth is touched. What is tested is the settings logic around it.
+@MainActor
 final class SpeakerAutomationTests: XCTestCase {
 
     private var suiteName = ""
     private var defaults: UserDefaults!
 
-    override func setUp() {
+    override func setUp() async throws {
         suiteName = "lgtvcompanion.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
@@ -109,18 +110,19 @@ final class SpeakerAutomationTests: XCTestCase {
 }
 
 /// Night schedule 22:00 until 08:00, checked at chosen times of day.
+@MainActor
 final class NightScheduleBehaviorTests: XCTestCase {
 
     private var suiteName = ""
     private var defaults: UserDefaults!
     private var calendar = Calendar.current
 
-    override func setUp() {
+    override func setUp() async throws {
         suiteName = "lgtvcompanion.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 

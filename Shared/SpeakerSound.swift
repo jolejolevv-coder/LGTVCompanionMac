@@ -9,7 +9,7 @@
 import Foundation
 
 /// A named set of gains for the speakers' nine custom EQ bands, in dB.
-public struct EQCurve: Identifiable, Equatable {
+public struct EQCurve: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
     public var gains: [Double]
@@ -23,7 +23,7 @@ public struct EQCurve: Identifiable, Equatable {
 
 /// What the user can pick as "sound": a preset built into the speakers, or a
 /// curve the app writes into the speakers' Custom slot.
-public enum SpeakerSound: Hashable, Identifiable {
+public enum SpeakerSound: Hashable, Identifiable, Sendable {
     case preset(EdifierEQPreset)
     case curve(String)
 
@@ -93,7 +93,7 @@ public enum SpeakerSoundLibrary {
 }
 
 /// Daily time window, possibly across midnight (22:00 to 07:00).
-public struct NightSchedule: Equatable {
+public struct NightSchedule: Equatable, Sendable {
     public static let minutesPerDay = 24 * 60
 
     /// Minutes after midnight, 0...1439.

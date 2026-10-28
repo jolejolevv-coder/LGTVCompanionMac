@@ -19,7 +19,7 @@
 import Foundation
 
 /// Level of the subwoofer output, as named in the ConneX app.
-public enum EdifierSubOutLevel: UInt8, CaseIterable, Identifiable, Hashable {
+public enum EdifierSubOutLevel: UInt8, CaseIterable, Identifiable, Hashable, Sendable {
     case low = 0
     case medium = 1
     case high = 2
@@ -36,7 +36,7 @@ public enum EdifierSubOutLevel: UInt8, CaseIterable, Identifiable, Hashable {
 }
 
 /// Physical input of the speakers.
-public enum EdifierInput: UInt8, CaseIterable, Identifiable, Hashable {
+public enum EdifierInput: UInt8, CaseIterable, Identifiable, Hashable, Sendable {
     case bluetooth = 1
     case usb = 2
     case hdmi = 3
@@ -67,7 +67,7 @@ public enum EdifierInput: UInt8, CaseIterable, Identifiable, Hashable {
 
 /// Sound presets built into the speakers. `custom` is the one slot whose
 /// nine bands can be set freely.
-public enum EdifierEQPreset: UInt8, CaseIterable, Identifiable, Hashable {
+public enum EdifierEQPreset: UInt8, CaseIterable, Identifiable, Hashable, Sendable {
     case classic = 0
     case monitor = 1
     case dynamic = 2
@@ -85,7 +85,7 @@ public enum EdifierEQPreset: UInt8, CaseIterable, Identifiable, Hashable {
     }
 }
 
-public enum EdifierReply: Equatable {
+public enum EdifierReply: Equatable, Sendable {
     case volume(maximum: Int, current: Int)
     case subOut(EdifierSubOutLevel)
     case name(String)

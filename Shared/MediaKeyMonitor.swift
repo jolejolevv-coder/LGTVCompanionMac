@@ -10,17 +10,21 @@ import Foundation
 import AppKit
 import CoreGraphics
 
-public enum MediaKeyEvent {
+public enum MediaKeyEvent: Sendable {
     case volumeUp
     case volumeDown
     case mute
 }
 
+/// Main actor. The event tap and the global monitor are serviced by the main
+/// run loop, so their callbacks run on the main thread; the C callback enters
+/// the actor with `assumeIsolated`.
+@MainActor
 public final class MediaKeyMonitor {
     /// Returns whether the key was actually routed to a TV. When it returns
     /// false (e.g. no enabled device), the key is NOT swallowed so the Mac's
     /// own volume control keeps working.
-    public var onMediaKey: ((MediaKeyEvent) -> Bool)?
+    public var onMediaKey: (@MainActor (MediaKeyEvent) -> Bool)?
 
     /// True when the CGEventTap is active (events are swallowed, the Mac's
     /// own volume OSD does not appear). False = passive fallback.
@@ -38,7 +42,7 @@ public final class MediaKeyMonitor {
 
     public init() {}
 
-    deinit { stop() }
+    isolated deinit { stop() }
 
     public static var hasAccessibilityPermission: Bool {
         AXIsProcessTrusted()
@@ -47,7 +51,9 @@ public final class MediaKeyMonitor {
     /// Shows the system prompt asking the user to grant Accessibility
     /// permission (System Settings → Privacy & Security → Accessibility).
     public static func requestAccessibilityPermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // Value of kAXTrustedCheckOptionPrompt. The constant is a mutable
+        // global in the C header, which Swift 6 does not accept.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
 
@@ -104,18 +110,12 @@ public final class MediaKeyMonitor {
             }
             let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
 
-            // Re-enable if the system disabled the tap (timeout)
-            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                if let tap = monitor.eventTap {
-                    CGEvent.tapEnable(tap: tap, enable: true)
-                }
-                return Unmanaged.passUnretained(cgEvent)
+            // The tap source sits on the main run loop, so this C callback
+            // runs on the main thread.
+            let swallow = MainActor.assumeIsolated {
+                monitor.shouldSwallow(eventType: type, event: cgEvent)
             }
-
-            if let nsEvent = NSEvent(cgEvent: cgEvent), monitor.process(nsEvent) {
-                return nil // swallow — Mac OSD won't show
-            }
-            return Unmanaged.passUnretained(cgEvent)
+            return swallow ? nil : Unmanaged.passUnretained(cgEvent)
         }
 
         eventTap = CGEvent.tapCreate(
@@ -133,6 +133,22 @@ public final class MediaKeyMonitor {
             CGEvent.tapEnable(tap: tap, enable: true)
             isUsingEventTap = true
         }
+    }
+
+    /// Called for every event the tap sees. True swallows the event, so the
+    /// Mac OSD does not show.
+    private func shouldSwallow(eventType: CGEventType, event cgEvent: CGEvent) -> Bool {
+        // Re-enable if the system disabled the tap (timeout)
+        if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return false
+        }
+        if let nsEvent = NSEvent(cgEvent: cgEvent), process(nsEvent) {
+            return true
+        }
+        return false
     }
 
     /// Returns true if the event was one of our media keys (and handled).

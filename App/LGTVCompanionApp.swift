@@ -53,6 +53,7 @@ struct LGTVCompanionApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only. WindowPresence adds the Dock icon and the app menu
@@ -78,7 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // first opened the menu. A short retry covers the brief window where
         // AXIsProcessTrusted() can still report false right after launch.
         DeviceManager.shared.ensureMediaKeyTap()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        MainThread.asyncAfter(seconds: 1.5) {
             DeviceManager.shared.ensureMediaKeyTap()
         }
 
@@ -109,7 +110,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.willPowerOffNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.isSystemShuttingDown = true
+            // queue: .main, so this runs on the main thread.
+            MainActor.assumeIsolated { self?.isSystemShuttingDown = true }
         }
     }
 
@@ -124,11 +126,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             // Real shutdown → full power-off, not just screen-off
             await manager.powerOffManagedDevices(fullOff: true)
-            await MainActor.run { self.replyTerminateOnce() }
+            self.replyTerminateOnce()
         }
 
         // Safety net: never block quit/shutdown longer than 15 s
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+        MainThread.asyncAfter(seconds: 15) {
             self.replyTerminateOnce()
         }
 

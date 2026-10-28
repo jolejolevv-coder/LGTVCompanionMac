@@ -9,7 +9,7 @@
   - Phase 2 Testbarkeit und Werkzeug: fertig 28.10.2026 (124 Tests, --install)
   - Phase 3 Bedienung nach Apple Regeln: fertig 28.10.2026 (132 Tests), Klicktest offen
   - Phase 4 Tastatur und VoiceOver: fertig 28.10.2026, Klicktest offen
-  - Phase 5 Swift 6
+  - Phase 5 Swift 6: fertig auf Branch bama-phase-5, 138 Tests, 0 Warnungen, Merge und Klicktest offen
 - Danach optional Release 1.3.0.
 
 ## Retrospektive Phase 1 (BAMA)

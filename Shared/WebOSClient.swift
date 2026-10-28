@@ -30,7 +30,7 @@ public enum WebOSError: Error, LocalizedError {
     }
 }
 
-public struct WebOSDevice: Codable, Identifiable, Equatable, Hashable {
+public struct WebOSDevice: Codable, Identifiable, Equatable, Hashable, Sendable {
     public let id: UUID
     public var name: String
     public var ipAddress: String
@@ -80,8 +80,9 @@ public struct WebOSDevice: Codable, Identifiable, Equatable, Hashable {
     }
 }
 
-/// One-shot flag, safe for use from multiple closures on the same queue.
-final class ResumeGuard {
+/// One-shot flag, safe for use from multiple closures on any queue: the lock
+/// is the only shared state, so the class can be shared across threads.
+final class ResumeGuard: @unchecked Sendable {
     private var claimed = false
     private let lock = NSLock()
 
@@ -96,22 +97,30 @@ final class ResumeGuard {
 }
 
 /// A status change the TV pushed on its own, without being asked.
-public enum WebOSStatusUpdate {
+public enum WebOSStatusUpdate: Sendable {
     case audio(volume: Int?, muted: Bool?, adjustable: Bool?)
     case power(state: String)
 }
 
-public class WebOSClient: ObservableObject, TVTransport {
-    @Published public var isConnected = false
-    @Published public var isPaired = false
+/// Concurrency: the class is `@unchecked Sendable` because it follows one
+/// rule instead of the compiler's. Everything that is not published (the
+/// connection, `device`, `messageId`, the pending requests, the pairing state
+/// and the two callbacks) is read and written only on the serial `queue`.
+/// The two published flags belong to the main actor and are written through
+/// `publishLinkState`. Callbacks from Network.framework run on `queue`
+/// because the connection is started there.
+public final class WebOSClient: ObservableObject, TVTransport, @unchecked Sendable {
+    @MainActor @Published public private(set) var isConnected = false
+    @MainActor @Published public private(set) var isPaired = false
 
     /// Called when the TV hands out a (new) client key, so the owner can persist it.
-    public var onPairingKeyUpdated: ((UUID, String) -> Void)?
+    /// Runs on the client's queue. Set it before connecting.
+    public var onPairingKeyUpdated: (@Sendable (UUID, String) -> Void)?
 
     /// Called on the client's queue whenever the TV reports a status change
     /// (and once right after each connection with the current state). Set it
     /// before connecting.
-    public var onStatusUpdate: ((UUID, WebOSStatusUpdate) -> Void)?
+    public var onStatusUpdate: (@Sendable (UUID, WebOSStatusUpdate) -> Void)?
 
     /// Message ids of the standing subscriptions. The TV answers every
     /// change with the id of the subscription it belongs to.
@@ -132,6 +141,11 @@ public class WebOSClient: ObservableObject, TVTransport {
 
     /// Serial queue: all connection callbacks and shared state live here.
     private let queue = DispatchQueue(label: "com.lgtvcompanion.webosclient")
+
+    /// TLS 1.0 (0x0301), the lowest version the handshake may use. The enum
+    /// case `.TLSv10` is deprecated; the raw value is the same, so the
+    /// handshake is unchanged. The upper limit stays TLS 1.2.
+    private static let minimumTLSVersion = tls_protocol_version_t(rawValue: 0x0301) ?? .TLSv12
 
     private static let requestTimeout: TimeInterval = 10
     /// Connecting is slower than a normal request: some webOS TVs take well
@@ -191,7 +205,7 @@ public class WebOSClient: ObservableObject, TVTransport {
             // flaky completing a TLS 1.3 handshake on port 3001; TLS 1.2 is
             // reliable. A low minimum keeps older firmware working too.
             sec_protocol_options_set_min_tls_protocol_version(
-                tlsOptions.securityProtocolOptions, .TLSv10)
+                tlsOptions.securityProtocolOptions, Self.minimumTLSVersion)
             sec_protocol_options_set_max_tls_protocol_version(
                 tlsOptions.securityProtocolOptions, .TLSv12)
             sec_protocol_options_set_verify_block(
@@ -229,25 +243,19 @@ public class WebOSClient: ObservableObject, TVTransport {
                 // one. .ready is exempt: it is what installs the connection.
                 switch state {
                 case .ready:
-                    DispatchQueue.main.async { self.isConnected = true }
+                    self.publishLinkState(isConnected: true)
                     self.startReceiving(on: newConnection)
                     if resumed.tryClaim() { continuation.resume() }
                 case .failed(let error):
                     if self.connection === newConnection {
-                        DispatchQueue.main.async {
-                            self.isConnected = false
-                            // The registration died with the socket.
-                            self.isPaired = false
-                        }
+                        // The registration died with the socket.
+                        self.publishLinkState(isConnected: false, isPaired: false)
                         self.failAllPending(with: .networkError(error))
                     }
                     if resumed.tryClaim() { continuation.resume(throwing: WebOSError.networkError(error)) }
                 case .cancelled:
                     if self.connection === newConnection {
-                        DispatchQueue.main.async {
-                            self.isConnected = false
-                            self.isPaired = false
-                        }
+                        self.publishLinkState(isConnected: false, isPaired: false)
                         self.failAllPending(with: .notConnected)
                     }
                     if resumed.tryClaim() { continuation.resume(throwing: WebOSError.notConnected) }
@@ -292,10 +300,7 @@ public class WebOSClient: ObservableObject, TVTransport {
             self.connection = nil
             self.failAllPending(with: .notConnected)
         }
-        DispatchQueue.main.async {
-            self.isConnected = false
-            self.isPaired = false
-        }
+        publishLinkState(isConnected: false, isPaired: false)
     }
 
     /// Like `disconnect()`, but completes only after the teardown has actually
@@ -319,6 +324,16 @@ public class WebOSClient: ObservableObject, TVTransport {
     /// The published flags, read on the main actor where they are written.
     func linkState() async -> TVLinkState {
         await MainActor.run { TVLinkState(isConnected: isConnected, isPaired: isPaired) }
+    }
+
+    /// Updates the published flags on the main actor, in call order. `nil`
+    /// leaves a flag as it is. May be called from any queue.
+    private func publishLinkState(isConnected: Bool? = nil, isPaired: Bool? = nil) {
+        MainThread.async { [weak self] in
+            guard let self else { return }
+            if let isConnected { self.isConnected = isConnected }
+            if let isPaired { self.isPaired = isPaired }
+        }
     }
 
     // MARK: - Pairing
@@ -486,7 +501,9 @@ public class WebOSClient: ObservableObject, TVTransport {
 
     // MARK: - Private Helpers
 
-    static let manifest: [String: Any] = [
+    /// Built on each call instead of stored: a stored `[String: Any]` is not
+    /// concurrency safe, and a registration happens once per connection.
+    static var manifest: [String: Any] { [
         "manifestVersion": 1,
         "appVersion": "1.0",
         "signed": [
@@ -524,6 +541,7 @@ public class WebOSClient: ObservableObject, TVTransport {
             ]
         ]
     ]
+    }
 
     /// The register message. Built here, without side effects, so a test can
     /// compare it with what the TV expects.
@@ -549,7 +567,7 @@ public class WebOSClient: ObservableObject, TVTransport {
         return message
     }
 
-    private func request(uri: String, payload: [String: Any]? = nil) async throws -> [String: Any] {
+    private func request(uri: String, payload: [String: any Sendable]? = nil) async throws -> [String: Any] {
         return try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 let id = "request_\(self.messageId)"
@@ -621,7 +639,7 @@ public class WebOSClient: ObservableObject, TVTransport {
             if let payload = json["payload"] as? [String: Any],
                let clientKey = payload["client-key"] as? String {
                 device.pairingKey = clientKey
-                DispatchQueue.main.async { self.isPaired = true }
+                publishLinkState(isPaired: true)
                 onPairingKeyUpdated?(device.id, clientKey)
             }
             // Invalidate this attempt's pending timeout before resuming.

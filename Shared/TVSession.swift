@@ -10,7 +10,7 @@ import Foundation
 
 /// What `TVSession` needs from a TV connection. `WebOSClient` is the real one;
 /// tests use a fake so the connect/register races run without a TV.
-protocol TVTransport: AnyObject {
+protocol TVTransport: AnyObject, Sendable {
     /// Current flags, read on the main actor (the client publishes them there).
     func linkState() async -> TVLinkState
     func connect() async throws
@@ -18,7 +18,7 @@ protocol TVTransport: AnyObject {
     func disconnectAndWait() async
 }
 
-struct TVLinkState: Equatable {
+struct TVLinkState: Equatable, Sendable {
     var isConnected: Bool
     var isPaired: Bool
 }
@@ -48,10 +48,10 @@ actor TVSession {
             do {
                 try await Self.connectAndPair(transport)
             } catch {
-                await self.attemptFinished()
+                self.attemptFinished()
                 throw error
             }
-            await self.attemptFinished()
+            self.attemptFinished()
         }
         inFlight = attempt
         try await attempt.value

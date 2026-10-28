@@ -8,6 +8,24 @@ Set (github.com/daveebbelaar/bama, Klon nur im Scratchpad, nicht installiert)
 geprüft. Ergebnis und Plan stehen in `specs/features/bama-review-improvements.md`
 (fünf Phasen mit Akzeptanzkriterien). Code ist dafür noch nicht geändert.
 
+## Phase 5 Checkpoint (Branch bama-phase-5, 28.10.2026)
+Fertig auf dem Branch, nicht gemerged, nicht installiert: Swift 6 Sprachmodus
+(`swift-tools-version: 6.0`), 0 Warnungen im Build und in den Tests, 138 Tests
+grün, `./scripts/build-release.sh` ohne `--install` gelaufen. Isolation:
+UI nahe Typen und alle Monitore sind `@MainActor`, `WebOSClient` bleibt auf
+seiner Queue (`@unchecked Sendable`), `TVSession` bleibt Actor. Callbacks von
+fremden Queues gehen über `MainThread` (`Shared/MainThread.swift`). Die volle
+Liste je Callback steht in `ARCHITECTURE.md`, Abschnitt "Threads und Concurrency".
+CI läuft jetzt auf macos-15 mit Xcode 16.4, weil `isolated deinit` Swift 6.1
+braucht. Die TV Verbindung (URL Form, TLS 1.2, Handshake) ist unverändert.
+Annahmen: DeviceManager Methoden laufen jetzt auf dem Main Actor, die
+Mindest TLS Version nutzt denselben Wert 0x0301 wie vorher, nur ohne die
+veraltete Konstante.
+Vom Nutzer zu prüfen: über Nacht Sleep und Wake mit dem TV, Lautstärketasten
+(Software Volume und Speaker), HUD, Bluetooth Verbindung zu den Edifiers,
+Zugriff auf Bedienungshilfen nach dem Start. Nicht automatisch getestet:
+Event Tap der Medientasten, CoreBluetooth, WebOSClient Verbindung, Audio Tap.
+
 ## Entscheidungen des Nutzers
 - Dock: nur Menüleiste, Dock Icon nur solange das Hauptfenster offen ist,
   beim Start kein Fenster. Grund: typisches Verhalten einer Menüleisten App.

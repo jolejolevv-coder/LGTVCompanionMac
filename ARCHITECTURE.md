@@ -126,18 +126,61 @@ höchstens 20 Sekunden.
 | Settings | `UserDefaults`, Schlüssel `lgtvcompanion.settings` |
 | Lautsprecher (an oder aus, Kennung) | `UserDefaults`, Schlüssel `lgtvcompanion.speakers.*` |
 
-## Threads
+## Threads und Concurrency
 
-- Oberfläche und veröffentlichter Status: Hauptthread.
-- `WebOSClient`: eigene serielle Queue, Ergebnisse gehen per `async` zurück.
-- `SoftwareVolumeController`: Der Audio Callback läuft auf einem Echtzeitthread.
-  Er liest nur einen Zielwert, ohne Sperre und ohne Speicher anzufordern.
-- `EdifierSpeakerController`: Bluetooth Callbacks auf dem Hauptthread.
+Das Paket baut im Swift 6 Sprachmodus (`swift-tools-version: 6.0`), der
+Compiler prüft die Isolation vollständig. Schlüsselprinzip: Alles, was die
+Oberfläche oder den Gerätestatus berührt, ist `@MainActor`. Alles, was auf
+einer eigenen Queue läuft, ist `nonisolated` und gibt Ergebnisse über
+`MainThread.async` oder `MainThread.asyncAfter` (`Shared/MainThread.swift`) an
+den Hauptthread zurück. Diese Helfer nutzen `DispatchQueue.main` und
+`MainActor.assumeIsolated`, damit die Reihenfolge der Aufrufe erhalten bleibt
+(ein `Task { @MainActor in }` verspricht das nicht).
 
-`DeviceManager` ist kein Actor. Zugriffe auf veröffentlichte Werte aus
-Hintergrundaufgaben laufen über `MainActor.run`. Die Compiler Warnungen zu
-`Sendable` in `WebOSClient` sind bekannt und betreffen Zugriffe, die über die
-serielle Queue laufen.
+Zugrunde liegt eine Regel aus dem Swift 6 Wechsel: Ein Closure, das in einem
+`@MainActor` Typ entsteht und an eine API geht, die es auf einer Hintergrund
+queue ausführt, löst zur Laufzeit einen Trap aus. Solche Closures sind
+`@Sendable` und betreten den Main Actor nur über `MainThread`. Ein direktes
+`MainActor.assumeIsolated` steht nur dort, wo die Queue nachweislich die Main
+Queue ist (Registrierung mit `queue: .main` oder Hauptrunloop).
+
+### Isolation der Typen
+
+| Typ | Isolation | Begründung |
+|---|---|---|
+| `DeviceManager`, `SpeakerAutomation`, `EdifierSpeakerController`, `SoftwareVolumeController`, `MediaKeyMonitor`, `PowerEventMonitor`, `UserIdleMonitor`, `DisplayConfigurationMonitor`, `DeviceDiscovery` | `@MainActor` | Halten veröffentlichten Zustand oder hängen an Hauptrunloop und Main Queue. Deinit über `isolated deinit` (braucht Swift 6.1, also Xcode 16.3 oder neuer). |
+| `AppDelegate`, `VolumeHUD`, `VolumeHUDModel` | `@MainActor` | AppKit und SwiftUI. |
+| `WebOSClient` | `@unchecked Sendable`, eigene serielle Queue | Jeder Zugriff auf veränderlichen Zustand läuft auf `queue`. Die veröffentlichten Werte `isConnected` und `isPaired` sind `@MainActor` und werden über `publishLinkState` gesetzt. Die Callbacks `onPairingKeyUpdated` und `onStatusUpdate` sind `@Sendable`. |
+| `TVSession` | `actor` | Serialisiert Verbindungsversuche je Gerät. |
+| Werttypen (`DeviceStatus`, `PowerEvent`, `EQCurve`, `NightSchedule` und weitere) | `Sendable` | Wandern zwischen Queues. |
+
+### Callbacks und ihre Queue
+
+| Callback | Läuft auf | Entscheidung |
+|---|---|---|
+| `NWConnection` State, Receive, Timeouts in `WebOSClient` | `WebOSClient.queue` | Bleibt dort, kein Main Actor Zugriff. Ergebnisse als `async`, Linkstatus über `MainThread.async`. |
+| IOKit Power Callback (`IORegisterForSystemPower`) | Hauptrunloop | `MainActor.assumeIsolated`. |
+| `NSWorkspace` Observer (Sleep, Wake, Screens) | `.main` | `MainActor.assumeIsolated`. |
+| Timer in `UserIdleMonitor`, `SpeakerAutomation`, `DeviceManager`, `DeviceDiscovery` | Hauptrunloop | `MainActor.assumeIsolated`. |
+| `CGEvent.tapCreate` Callback (`MediaKeyMonitor`) | Hauptrunloop | `MainActor.assumeIsolated` um `shouldSwallow`. |
+| `CGDisplayRegisterReconfigurationCallback` | beliebiger Thread | Springt über `MainThread.async` auf den Main Actor. |
+| Core Audio Listener Default Output (`SoftwareVolumeController`) | `.main` (bei der Registrierung angegeben) | `MainActor.assumeIsolated`. |
+| Core Audio IOProc (`SoftwareVolumeController`) | `ioQueue`, Echtzeit | `nonisolated static func render`, kein Main Actor. Die Zeiger auf Ziel und aktuellen Gain sind `nonisolated(unsafe)` (siehe Kommentar im Code), gelesen wird ohne Sperre. |
+| `CBCentralManager` und `CBPeripheral` Delegate (`EdifierSpeakerController`) | `.main` (Central mit `queue: .main`) | `@preconcurrency` Konformität, die Methoden laufen auf dem Main Actor. |
+| Bonjour und SSDP Gruppe in `DeviceDiscovery` | `.main` | `MainActor.assumeIsolated`. |
+| `URLSession` Completion in `DeviceDiscovery` | Hintergrund | `@Sendable`, baut das Ergebnis dort und springt über `MainThread` zurück. |
+| `probeControlPort` Completion | `probeQueue` | `nonisolated static`, Ergebnis über `MainThread`. |
+| `Task.detached` in `WakeOnLAN` und `MACAddressResolver` | Global Executor | Statische `nonisolated` Funktionen ohne Zustand. |
+| `DispatchWorkItem` mit `asyncAfter` auf `DispatchQueue.main` | Main Queue | Stehen in `@MainActor` Typen. Die Closures sind dort isoliert und laufen auf der Main Queue. |
+
+### Smoke Tests
+
+`BackgroundMonitorSmokeTests` startet und stoppt die Monitore ohne Hardware
+für etwa eineinhalb Sekunden: Idle Timer (löst mit Schwelle 0 wirklich aus),
+Display Callback, Power Registrierung, `SpeakerAutomation` Timer und
+`SoftwareVolumeController` ohne Tap. Nicht abgedeckt, weil sie eine
+Berechtigung, Bluetooth oder einen TV brauchen: Event Tap der Medientasten,
+CoreBluetooth, Verbindung des `WebOSClient`, Start des Audio Taps.
 
 ## Tests
 

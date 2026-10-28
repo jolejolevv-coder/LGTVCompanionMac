@@ -10,7 +10,7 @@ import Foundation
 import AppKit
 import CoreGraphics
 
-public struct DisplayInfo: Identifiable, Equatable {
+public struct DisplayInfo: Identifiable, Equatable, Sendable {
     public let id: CGDirectDisplayID
     public let name: String
     public let isBuiltin: Bool

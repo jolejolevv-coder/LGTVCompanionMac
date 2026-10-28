@@ -10,13 +10,16 @@
 //  connects only when there is something to do and disconnects again after a
 //  short idle period.
 //
-//  Everything here runs on the main thread (the Bluetooth callbacks are
-//  delivered on the main queue).
+//  Everything here runs on the main thread: the class is main actor isolated
+//  and the central manager is created with the main queue, so the Bluetooth
+//  callbacks arrive on the main thread. The delegate conformances are
+//  `@preconcurrency`, which checks that at run time.
 //
 
 import Foundation
 import CoreBluetooth
 
+@MainActor
 public final class EdifierSpeakerController: NSObject, ObservableObject {
     public enum ConnectionState: Equatable {
         case idle          // not connected, will connect on demand
@@ -44,13 +47,13 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     @Published public private(set) var isMuted = false
 
     /// Called after a keyboard key changed the volume: level 0...1, muted.
-    public var onKeyVolumeChanged: ((Double, Bool) -> Void)?
+    public var onKeyVolumeChanged: (@MainActor (Double, Bool) -> Void)?
     /// Called once per connection, as soon as the speaker's volume is known.
-    public var onVolumeKnown: (() -> Void)?
+    public var onVolumeKnown: (@MainActor () -> Void)?
     /// Called after a value the speaker reported was taken over, with the
     /// reply it came from. Lets the caller react to exactly that fresh value
     /// instead of to cached ones.
-    public var onReply: ((EdifierReply) -> Void)?
+    public var onReply: (@MainActor (EdifierReply) -> Void)?
 
     /// True while a multi-frame change (an EQ curve) is still being sent. A
     /// state read during that time can show a half-written curve.
@@ -205,7 +208,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         input = newInput
         enqueue([EdifierProtocol.setInput(newInput)])
         // Confirm once the speaker has settled on the new input.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputSettleSeconds) { [weak self] in
+        MainThread.asyncAfter(seconds: Self.inputSettleSeconds) { [weak self] in
             guard let self = self, self.state == .connected else { return }
             self.send(EdifierProtocol.queryInput())
         }
@@ -383,7 +386,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         framesInFlight += frames.count
         for (position, frame) in frames.enumerated() {
             let delay = Double(position) * Self.frameSpacingSeconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainThread.asyncAfter(seconds: delay) { [weak self] in
                 guard let self = self else { return }
                 self.framesInFlight -= 1
                 self.send(frame)
@@ -490,7 +493,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
 
 // MARK: - CBCentralManagerDelegate
 
-extension EdifierSpeakerController: CBCentralManagerDelegate {
+extension EdifierSpeakerController: @preconcurrency CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
@@ -527,7 +530,7 @@ extension EdifierSpeakerController: CBCentralManagerDelegate {
 
 // MARK: - CBPeripheralDelegate
 
-extension EdifierSpeakerController: CBPeripheralDelegate {
+extension EdifierSpeakerController: @preconcurrency CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let service = peripheral.services?.first(where: { $0.uuid == controlService }) else {
             failConnection()

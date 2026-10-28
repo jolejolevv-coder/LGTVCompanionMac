@@ -9,7 +9,7 @@
 import Foundation
 
 /// Where one volume key press is sent.
-public enum VolumeKeyRoute: Equatable {
+public enum VolumeKeyRoute: Equatable, Sendable {
     /// The Edifier speakers, over Bluetooth.
     case speakers
     /// The Mac's own sound, damped through the Core Audio tap.
