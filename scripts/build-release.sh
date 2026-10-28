@@ -100,6 +100,10 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.2</string>
+    <!-- Menu bar app: starts without Dock icon. WindowPresence switches to
+         a regular app while a window is open. -->
+    <key>LSUIElement</key>
+    <true/>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>LGTV Companion uses Bluetooth to set the volume and Sub Out level of your Edifier speakers.</string>
     <key>NSAudioCaptureUsageDescription</key>
