@@ -6,6 +6,7 @@
 //  Center: grouped cards, pill-shaped sliders, round icon buttons.
 //
 
+import LGTVCompanionShared
 import SwiftUI
 
 /// Colors for "selected" and "filled" parts of the panel controls. They follow
@@ -27,6 +28,19 @@ enum MenuMetrics {
     static let rowSpacing: CGFloat = 10
     static let sliderHeight: CGFloat = 24
     static let tileIconDiameter: CGFloat = 36
+    /// Smallest height of a capsule button, so it is an easy pointer target.
+    static let capsuleMinHeight: CGFloat = 24
+    static let captionSpacing: CGFloat = 6
+}
+
+/// How far the arrow keys move a volume slider (on the 0...100 scale of the
+/// software volume; the TV and speaker sliders use their own units).
+enum VolumeKeyboardStep {
+    /// One unit, like a volume key press on the TV or the speakers.
+    static let device: Double = 1
+    /// One step of the macOS style 16 step grid, like a volume key press in
+    /// software volume mode.
+    static let software: Double = 100 / Double(SoftwareVolume.stepCount)
 }
 
 /// A grouped block of controls, like one module in Control Center.
@@ -111,19 +125,40 @@ struct MenuCaption: View {
 
 /// Pill-shaped slider in the style of Control Center. Dragging updates the
 /// value live; `onCommit` fires once when the drag ends, which is where
-/// network commands belong.
+/// network commands belong. The slider is reachable with Tab and moves with
+/// the arrow keys and VoiceOver; those steps commit debounced, so holding a
+/// key sends one command instead of one per step.
 struct PillSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 1
+    /// How far one arrow key press or VoiceOver adjustment moves the value.
+    var keyboardStep: Double = VolumeKeyboardStep.device
     var isEnabled = true
     let accessibilityLabel: String
+    var accessibilityID: String?
     var onCommit: () -> Void = {}
+
+    /// Quiet time after the last keyboard or VoiceOver step before `onCommit`.
+    private static let commitDebounce: Duration = .milliseconds(300)
+    private static let focusRingWidth: CGFloat = 2
+    private static let percentFull = 100.0
+
+    @FocusState private var isFocused: Bool
+    /// The value when the current drag began. A drag that ends where it began
+    /// changed nothing, so it commits nothing.
+    @State private var valueAtDragStart: Double?
+    @State private var pendingCommit: Task<Void, Never>?
 
     private var fraction: Double {
         let span = range.upperBound - range.lowerBound
         guard span > 0 else { return 0 }
         return min(max((value - range.lowerBound) / span, 0), 1)
+    }
+
+    /// Spoken value: the position in the range as a percentage.
+    private var accessibilityPercent: String {
+        "\(Int((fraction * Self.percentFull).rounded()))%"
     }
 
     var body: some View {
@@ -145,20 +180,59 @@ struct PillSlider: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
+                        if valueAtDragStart == nil {
+                            valueAtDragStart = value
+                            pendingCommit?.cancel()
+                        }
                         setValue(from: drag.location.x, width: geometry.size.width, knob: height)
                     }
-                    .onEnded { _ in onCommit() }
+                    .onEnded { _ in
+                        let changed = valueAtDragStart != value
+                        valueAtDragStart = nil
+                        if changed { onCommit() }
+                    }
             )
         }
         .frame(height: MenuMetrics.sliderHeight)
         .opacity(isEnabled ? 1 : 0.35)
         .allowsHitTesting(isEnabled)
+        .focusable(isEnabled)
+        .focused($isFocused)
+        // The system ring would be a rectangle around the bounds; draw our own.
+        .focusEffectDisabled()
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.accentColor, lineWidth: Self.focusRingWidth)
+                .opacity(isFocused ? 1 : 0)
+                .allowsHitTesting(false)
+        )
+        .onKeyPress(keys: [.leftArrow, .downArrow, .rightArrow, .upArrow]) { press in
+            guard isEnabled else { return .ignored }
+            let isIncrease = press.key == .rightArrow || press.key == .upArrow
+            adjust(by: isIncrease ? keyboardStep : -keyboardStep)
+            return .handled
+        }
         .accessibilityElement()
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue("\(Int(value))")
+        .accessibilityValue(accessibilityPercent)
+        .accessibilityIdentifier(accessibilityID ?? "")
         .accessibilityAdjustableAction { direction in
-            let delta = direction == .increment ? step : -step
-            value = min(max(value + delta, range.lowerBound), range.upperBound)
+            switch direction {
+            case .increment: adjust(by: keyboardStep)
+            case .decrement: adjust(by: -keyboardStep)
+            @unknown default: break
+            }
+        }
+    }
+
+    /// Moves the value by one keyboard or VoiceOver step and schedules the
+    /// commit after the last step.
+    private func adjust(by delta: Double) {
+        value = min(max(value + delta, range.lowerBound), range.upperBound)
+        pendingCommit?.cancel()
+        pendingCommit = Task {
+            try? await Task.sleep(for: Self.commitDebounce)
+            guard !Task.isCancelled else { return }
             onCommit()
         }
     }
@@ -177,9 +251,11 @@ struct PillSlider: View {
 struct VolumeRow: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
+    var keyboardStep: Double = VolumeKeyboardStep.device
     let isMuted: Bool
     var isEnabled = true
     let accessibilityLabel: String
+    var accessibilityID: String?
     let onToggleMute: () -> Void
     var onCommit: () -> Void = {}
 
@@ -195,13 +271,16 @@ struct VolumeRow: View {
             .disabled(!isEnabled)
             .help(isMuted ? "Unmute" : "Mute")
 
-            PillSlider(value: $value, range: range, isEnabled: isEnabled,
-                       accessibilityLabel: accessibilityLabel, onCommit: onCommit)
+            PillSlider(value: $value, range: range, keyboardStep: keyboardStep, isEnabled: isEnabled,
+                       accessibilityLabel: accessibilityLabel, accessibilityID: accessibilityID,
+                       onCommit: onCommit)
 
-            Text("\(Int(value))")
+            // The slider speaks its own value.
+            Text("\(Int(value.rounded()))")
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 22, alignment: .trailing)
+                .accessibilityHidden(true)
         }
     }
 }
@@ -223,6 +302,7 @@ struct ControlTile: View {
     var isDisabled = false
     /// Tooltip. Falls back to the title when the title says enough.
     var help: String?
+    var accessibilityID: String?
     let action: () -> Void
 
     var body: some View {
@@ -244,12 +324,16 @@ struct ControlTile: View {
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.5 : 1)
         .help(help ?? title)
+        .accessibilityIdentifier(accessibilityID ?? "")
     }
 }
 
 /// Small capsule button, used for the input shortcuts.
 struct CapsuleButton: View {
     let title: String
+    /// Tooltip and spoken hint, for a title that is ambiguous on its own.
+    var help: String?
+    var accessibilityID: String?
     let action: () -> Void
 
     var body: some View {
@@ -258,11 +342,37 @@ struct CapsuleButton: View {
                 .font(.system(size: 11, weight: .medium))
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: MenuMetrics.capsuleMinHeight)
                 .background(Color.primary.opacity(0.1), in: Capsule())
                 .contentShape(Capsule())
+                // The keyboard focus ring follows the capsule, not the bounds.
+                .contentShape(.focusEffect, Capsule())
         }
         .buttonStyle(PressableStyle())
+        .help(help ?? "")
+        .accessibilityIdentifier(accessibilityID ?? "")
+    }
+}
+
+/// A caption over a group of capsules. VoiceOver reads the group under the
+/// caption's name ("Input, group"), so "HDMI 1" and "BT" have a context.
+struct CapsuleGroup<Content: View>: View {
+    let caption: String
+    /// What VoiceOver calls the group, when the caption alone is not unique
+    /// in the panel (both the TV and the speakers have an "Input").
+    var spokenName: String?
+    var accessibilityID: String?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MenuMetrics.captionSpacing) {
+            MenuCaption(text: caption)
+                .accessibilityHidden(true)
+            content
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(spokenName ?? caption)
+        .accessibilityIdentifier(accessibilityID ?? "")
     }
 }
 
@@ -276,6 +386,11 @@ struct CapsulePicker<Option: Hashable>: View {
     var isEnabled = true
     /// Capsules per row. nil puts all options into a single row.
     var columns: Int?
+    /// Tooltip and spoken name for an option whose label is short or cryptic.
+    var help: (Option) -> String? = { _ in nil }
+    /// Identifier of the group; each capsule gets `<identifier>.<optionKey>`.
+    var accessibilityID: String?
+    var optionKey: (Option) -> String = { String(describing: $0) }
     let onSelect: (Option) -> Void
 
     private static var spacing: CGFloat { 6 }
@@ -308,11 +423,15 @@ struct CapsulePicker<Option: Hashable>: View {
                     .foregroundStyle(isSelected ? MenuColors.onSelectedFill : Color.primary)
                     .lineLimit(1)
                     .padding(.vertical, 5)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: MenuMetrics.capsuleMinHeight)
                     .background(isSelected ? MenuColors.selectedFill : Color.primary.opacity(0.1), in: Capsule())
                     .contentShape(Capsule())
+                    .contentShape(.focusEffect, Capsule())
             }
             .buttonStyle(PressableStyle())
+            .help(help(option) ?? "")
+            .accessibilityLabel(help(option) ?? label(option))
+            .accessibilityIdentifier(accessibilityID.map { "\($0).\(optionKey(option))" } ?? "")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }

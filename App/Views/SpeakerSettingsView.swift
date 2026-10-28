@@ -33,6 +33,7 @@ struct SpeakerSettingsTab: View {
                 get: { speakers.isEnabled },
                 set: { speakers.setEnabled($0) }
             ))
+            .accessibilityIdentifier(AccessibilityID.Settings.speakerControl)
 
             if speakers.isEnabled {
                 LabeledContent("Status") {
@@ -73,6 +74,7 @@ struct SpeakerSettingsTab: View {
                 }
             }
             .disabled(speakers.eqPreset == nil)
+            .accessibilityIdentifier(AccessibilityID.Settings.speakerSound)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -103,6 +105,7 @@ struct SpeakerSettingsTab: View {
                 set: { speakers.setPowerSave($0) }
             ))
             .disabled(speakers.powerSaveEnabled == nil)
+            .accessibilityIdentifier(AccessibilityID.Settings.speakerPowerSave)
         } header: {
             Text("Power")
         } footer: {
@@ -118,6 +121,7 @@ struct SpeakerSettingsTab: View {
                 get: { automation.wakeInputEnabled },
                 set: { automation.setWakeInput(enabled: $0) }
             ))
+            .accessibilityIdentifier(AccessibilityID.Settings.speakerWakeInputEnabled)
 
             Picker("Input", selection: Binding(
                 get: { automation.wakeInput },
@@ -128,6 +132,7 @@ struct SpeakerSettingsTab: View {
                 }
             }
             .disabled(!automation.wakeInputEnabled)
+            .accessibilityIdentifier(AccessibilityID.Settings.speakerWakeInput)
         } header: {
             Text("When the Mac Wakes")
         } footer: {
@@ -162,6 +167,7 @@ struct NightModeSettingsTab: View {
                 get: { automation.nightModeActive },
                 set: { automation.setNightMode($0) }
             ))
+            .accessibilityIdentifier(AccessibilityID.Settings.nightMode)
 
             Stepper(value: Binding(
                 get: { automation.nightVolumeLimit },
@@ -172,6 +178,7 @@ struct NightModeSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .accessibilityIdentifier(AccessibilityID.Settings.nightVolumeLimit)
 
             Picker("Subwoofer", selection: Binding(
                 get: { automation.nightSubOut },
@@ -181,11 +188,13 @@ struct NightModeSettingsTab: View {
                     Text(level.label).tag(level)
                 }
             }
+            .accessibilityIdentifier(AccessibilityID.Settings.nightSubwoofer)
 
             Toggle("Switch on by schedule", isOn: Binding(
                 get: { automation.nightScheduleEnabled },
                 set: { automation.setNightSchedule(enabled: $0) }
             ))
+            .accessibilityIdentifier(AccessibilityID.Settings.nightSchedule)
 
             if automation.nightScheduleEnabled {
                 DatePicker("From", selection: timeBinding(

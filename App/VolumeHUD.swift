@@ -24,10 +24,16 @@ final class VolumeHUD {
     private static let screenMargin: CGFloat = 12
     private static let visibleSeconds: TimeInterval = 1.5
     private static let fadeSeconds: TimeInterval = 0.25
+    /// Shortest gap between two VoiceOver announcements, so a held volume key
+    /// does not queue up a speech backlog. The last value is always spoken.
+    private static let announceIntervalSeconds: TimeInterval = 0.5
+    private static let percentFull = 100.0
 
     private let model = VolumeHUDModel()
     private var panel: NSPanel?
     private var hideWork: DispatchWorkItem?
+    private var lastAnnouncement: Date?
+    private var announceWork: DispatchWorkItem?
 
     func show(level: Double, muted: Bool) {
         model.level = level
@@ -45,6 +51,40 @@ final class VolumeHUD {
         let work = DispatchWorkItem { [weak self] in self?.fadeOut() }
         hideWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.visibleSeconds, execute: work)
+
+        announce(level: level, muted: muted)
+    }
+
+    /// The panel ignores the mouse and never takes focus, so VoiceOver would
+    /// not notice it. Speaks at most every `announceIntervalSeconds`; a value
+    /// that arrives sooner replaces the waiting one and is spoken when the
+    /// interval is over.
+    private func announce(level: Double, muted: Bool) {
+        let text = Self.announcementText(level: level, muted: muted)
+        announceWork?.cancel()
+        announceWork = nil
+
+        let wait = lastAnnouncement.map { Self.announceIntervalSeconds - Date().timeIntervalSince($0) } ?? 0
+        if wait <= 0 {
+            post(text)
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.announceWork = nil
+            self?.post(text)
+        }
+        announceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: work)
+    }
+
+    private func post(_ text: String) {
+        lastAnnouncement = Date()
+        AccessibilityNotification.Announcement(text).post()
+    }
+
+    static func announcementText(level: Double, muted: Bool) -> String {
+        if muted { return "Muted" }
+        return "Volume \(Int((SoftwareVolume.clamp(level) * percentFull).rounded())) percent"
     }
 
     private func makePanel() -> NSPanel {
@@ -89,6 +129,7 @@ final class VolumeHUD {
 
 private struct VolumeHUDView: View {
     @ObservedObject var model: VolumeHUDModel
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var filledSteps: Int {
         model.muted ? 0 : Int((model.level * Double(SoftwareVolume.stepCount)).rounded())
@@ -118,6 +159,14 @@ private struct VolumeHUDView: View {
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(background, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// With Reduce Transparency on, the blurred material gives way to a solid
+    /// color.
+    private var background: AnyShapeStyle {
+        reduceTransparency
+            ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
+            : AnyShapeStyle(.regularMaterial)
     }
 }

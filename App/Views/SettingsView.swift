@@ -93,6 +93,7 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("Launch at login", isOn: $launchAtLogin)
+                    .accessibilityIdentifier(AccessibilityID.Settings.launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
                         updateLaunchAtLogin(newValue)
                     }
@@ -122,6 +123,7 @@ struct SettingsView: View {
             
             Section {
                 Toggle("Volume keys control the TV and speakers", isOn: $mediaKeysEnabled)
+                    .accessibilityIdentifier(AccessibilityID.Settings.volumeKeys)
                     .onChange(of: mediaKeysEnabled) { _, newValue in
                         // Only act on a real user toggle. loadSettings() also
                         // moves this value (false → stored), which would
@@ -135,6 +137,7 @@ struct SettingsView: View {
                     get: { deviceManager.softwareVolumeEnabled },
                     set: { deviceManager.setSoftwareVolumeEnabled($0) }
                 ))
+                .accessibilityIdentifier(AccessibilityID.Settings.softwareVolume)
             } header: {
                 Text("Volume Keys")
             } footer: {
@@ -171,6 +174,7 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("Switch TVs off when the Mac is idle", isOn: $userIdleEnabled)
+                    .accessibilityIdentifier(AccessibilityID.Settings.userIdle)
                     .onChange(of: userIdleEnabled) { _, newValue in
                         updateUserIdleSettings()
                     }
@@ -185,6 +189,7 @@ struct SettingsView: View {
                         Text("Idle timeout")
                     }
                     .labelsHidden()
+                    .accessibilityIdentifier(AccessibilityID.Settings.idleTimeout)
                     .onChange(of: userIdleTimeout) { _, _ in
                         updateUserIdleSettings()
                     }
