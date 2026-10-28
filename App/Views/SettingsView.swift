@@ -20,6 +20,7 @@ struct SettingsView: View {
     /// The login item is registered but macOS waits for the user's approval.
     @State private var launchAtLoginNeedsApproval = false
     @State private var mediaKeysEnabled = false
+    @State private var confirmingReset = false
 
     /// Apps currently holding a display-sleep assertion. Refreshed live while
     /// the settings window is open so a starting video shows up on its own.
@@ -131,10 +132,20 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Reset All Settings") {
-                    resetSettings()
+                Button("Reset All Settings…", role: .destructive) {
+                    confirmingReset = true
                 }
-                .foregroundStyle(.red)
+                .confirmationDialog("Reset all settings?", isPresented: $confirmingReset,
+                                    titleVisibility: .visible) {
+                    // No keyboard shortcut and not the default: Return must
+                    // not trigger it.
+                    Button("Reset All Settings", role: .destructive) {
+                        resetSettings()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This removes all TVs and their pairing keys and resets every option, including the speakers. It cannot be undone. Launch at login is not changed.")
+                }
             } header: {
                 Text("Advanced")
             }
@@ -337,32 +348,11 @@ struct SettingsView: View {
     }
     
     private func resetSettings() {
-        let alert = NSAlert()
-        alert.messageText = "Reset All Settings?"
-        alert.informativeText = "This will remove all devices and reset all settings to defaults. This action cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Reset")
-        alert.addButton(withTitle: "Cancel")
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            // Clear all devices
-            for device in deviceManager.devices {
-                deviceManager.removeDevice(device)
-            }
-            
-            // Reset settings
-            userIdleEnabled = false
-            userIdleTimeout = 300
-            updateUserIdleSettings()
-
-            // Clear the keep-awake allowlist too.
-            for app in deviceManager.assertionAllowlist {
-                deviceManager.setAppAllowed(app, allowed: false)
-            }
-            displaySleepApps = deviceManager.currentDisplaySleepApps()
-        }
+        deviceManager.resetAllSettings()
+        // The form keeps its own copies of some values.
+        loadSettings()
     }
-    
+
     private func formatTimeout(_ seconds: Double) -> String {
         let minutes = Int(seconds / 60)
         if minutes < 60 {

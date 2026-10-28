@@ -45,7 +45,7 @@ public class DeviceManager: ObservableObject {
     @Published public var deviceStatuses: [UUID: DeviceStatus] = [:]
     @Published public var isMonitoringPowerEvents = false
     @Published public var userIdleEnabled = false
-    @Published public var userIdleTimeout: TimeInterval = 300 // 5 minutes
+    @Published public var userIdleTimeout: TimeInterval = DeviceManager.defaultUserIdleTimeout
     @Published public var mediaKeysEnabled = false
 
     /// What went wrong with the last TV command that failed, as a sentence for
@@ -72,9 +72,9 @@ public class DeviceManager: ObservableObject {
 
     /// Bluetooth control of Edifier speakers (real volume, Sub Out). Idle
     /// until switched on in Settings.
-    public let speakers = EdifierSpeakerController()
+    public let speakers: EdifierSpeakerController
     /// Sound selection, night mode and wake behavior of the speakers.
-    public private(set) lazy var speakerAutomation = SpeakerAutomation(speakers: speakers)
+    public private(set) lazy var speakerAutomation = SpeakerAutomation(speakers: speakers, defaults: userDefaults)
 
     /// Apps allowed to keep the TV on while they hold a display-sleep
     /// assertion (i.e. while playing video). Persisted by bundle ID so the
@@ -99,7 +99,10 @@ public class DeviceManager: ObservableObject {
     /// attenuation.
     private var tvCanAdjustVolume: Bool?
 
-    private let userDefaults = UserDefaults.standard
+    /// Idle time before the TVs are switched off: 5 minutes.
+    public static let defaultUserIdleTimeout: TimeInterval = 300
+
+    private let userDefaults: UserDefaults
     private let devicesKey = "lgtvcompanion.devices"
     private let settingsKey = "lgtvcompanion.settings"
     /// Pairing keys live here, not in the preferences file.
@@ -112,10 +115,15 @@ public class DeviceManager: ObservableObject {
     /// Status poll that keeps the TV connections warm.
     private static let keepaliveSeconds: TimeInterval = 60
 
+    /// `userDefaults` is where devices, settings and the speakers' settings
+    /// are stored; tests pass their own suite.
     public init(enableSoftwareVolume: Bool = false,
-                pairingKeyStore: PairingKeyStoring = CachingPairingKeyStore(KeychainPairingKeyStore())) {
+                pairingKeyStore: PairingKeyStoring = CachingPairingKeyStore(KeychainPairingKeyStore()),
+                userDefaults: UserDefaults = .standard) {
         softwareVolumeController = enableSoftwareVolume ? SoftwareVolumeController() : nil
         self.pairingKeyStore = pairingKeyStore
+        self.userDefaults = userDefaults
+        speakers = EdifierSpeakerController(defaults: userDefaults)
         loadDevices()
         loadSettings()
         softwareVolumeController?.onOutputDeviceChanged = { [weak self] in
@@ -937,6 +945,42 @@ public class DeviceManager: ObservableObject {
         }
     }
 
+    /// Returns everything the app stores to a fresh install: all TVs with
+    /// their pairing keys, idle and media key options, the keep-awake list,
+    /// software volume, and the speakers' settings. Launch at login is the
+    /// system's and stays as it is.
+    public func resetAllSettings() {
+        for device in devices {
+            removeDevice(device)
+        }
+
+        updateUserIdleSettings(enabled: false, timeout: Self.defaultUserIdleTimeout)
+        assertionAllowlist = []
+
+        mediaKeysEnabled = false
+        mediaKeyMonitor?.stop()
+        mediaKeyMonitor = nil
+
+        softwareVolumeEnabled = true
+        softwareVolumeLevel = 1
+        softwareVolumeMuted = false
+        tvCanAdjustVolume = nil
+        syncSoftwareVolume()
+
+        speakerAutomation.resetSettings()
+        speakers.resetSettings()
+
+        // Nothing of the old state may be written back by a pending save.
+        pendingSettingsSave?.cancel()
+        pendingSettingsSave = nil
+        userDefaults.removeObject(forKey: settingsKey)
+        userDefaults.removeObject(forKey: devicesKey)
+
+        lastError = nil
+        lastErrorDeviceID = nil
+        deviceStatuses = [:]
+    }
+
     // MARK: - Persistence
 
     private func saveDevices() {
@@ -1005,7 +1049,7 @@ public class DeviceManager: ObservableObject {
         }
 
         userIdleEnabled = settings["userIdleEnabled"] as? Bool ?? false
-        userIdleTimeout = settings["userIdleTimeout"] as? TimeInterval ?? 300
+        userIdleTimeout = settings["userIdleTimeout"] as? TimeInterval ?? Self.defaultUserIdleTimeout
         mediaKeysEnabled = settings["mediaKeysEnabled"] as? Bool ?? false
         softwareVolumeEnabled = settings["softwareVolumeEnabled"] as? Bool ?? true
         softwareVolumeLevel = SoftwareVolume.clamp(settings["softwareVolumeLevel"] as? Double ?? 1)
