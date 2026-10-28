@@ -24,7 +24,8 @@ geprüft. Ergebnis und Plan stehen in `specs/features/bama-review-improvements.m
    transienten Fehlern, `startPowerEventMonitoring` in
    `applicationDidFinishLaunching`, übrige Punkte der Liste je ein Commit.
 3. Erledigt 28.10.: Phase 2 (merge auf main, per --install installiert).
-   Jetzt Phase 3, danach 4 und 5 laut Spec, alles in dieser Sitzung (Nutzer:
+   Erledigt 28.10.: Phase 3 (installiert, startet als UIElement ohne Fenster).
+   Jetzt Phase 4, danach 5 laut Spec, alles in dieser Sitzung (Nutzer:
    "mach dann hier"). Phase 3 zusätzlich: Pair Again in DeviceDetailView
    über DeviceManager und TVSession führen.
 4. Von Hand offen nach Phase 1: Lautstärketasten, Sleep und Wake nach
@@ -49,3 +50,11 @@ freigegeben. Je Punkt ein Commit, Tests im selben Schritt, danach build,
 install und CI prüfen. Wenn die Phase fertig ist: uebergabe Skill, dann die
 nächste Phase in einer neuen Sitzung starten.
 ```
+
+## Klickliste Phase 3 für den Nutzer
+Panel "Open LGTV Companion" (Dock Icon erscheint, verschwindet beim Schließen),
+"Settings…" und ⌘, kommen nach vorn, Menüs TV und Speakers mit Kurzbefehlen
+(⌘N, ⇧⌘N, ⌘R, ⌥⌘1 bis 4, ⌥⌘N), Autosave von IP und MAC, Pair Again, rote
+Fehlerzeile im Panel bei ausgeschaltetem TV, Permissions Zeilen, Return löst
+Reset und Remove TV nicht aus, Hell und Dunkel lesbar, About zeigt das Icon.
+Bekannt: Klick auf die App im Finder bei laufender App öffnet kein Fenster.

@@ -7,7 +7,7 @@
   `specs/features/bama-review-improvements.md`
   - Phase 1 Stabilität: fertig 28.10.2026 (merge 0de3cb7, 104 Tests)
   - Phase 2 Testbarkeit und Werkzeug: fertig 28.10.2026 (124 Tests, --install)
-  - Phase 3 Bedienung nach Apple Regeln
+  - Phase 3 Bedienung nach Apple Regeln: fertig 28.10.2026 (132 Tests), Klicktest offen
   - Phase 4 Tastatur und VoiceOver
   - Phase 5 Swift 6
 - Danach optional Release 1.3.0.
@@ -28,3 +28,11 @@
    korrigiert.
 3. Besser spezifizieren: im Brief sagen, welche Testfälle Pflicht sind, statt
    Beispiele zu nennen, die als Signaturvorgabe gelesen werden.
+
+## Retrospektive Phase 3 (BAMA)
+1. Gut: Settings, Menüs, Reset und Permissions in einem Durchgang, Reset per
+   Test gegen eine eigene Defaults Suite belegt.
+2. Falsche Annahmen: SwiftUI öffnet ein `Window` beim Start immer; der Builder
+   versteckt es per Alpha, dazu kam `LSUIElement`, damit nichts im Dock springt.
+3. Besser spezifizieren: UI Phasen brauchen eine Klickliste für den Nutzer
+   schon in der Spec, weil der Agent die App nicht bedienen soll.
