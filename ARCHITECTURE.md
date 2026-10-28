@@ -51,6 +51,7 @@ und `LGTVCompanionApp` (SwiftUI). Externe Abhängigkeiten gibt es keine.
 | `SpeakerSound.swift` | Klangwahl, EQ Kurven (Techno, Hip-Hop), Zeitplan des Nachtmodus |
 | `SpeakerAutomation.swift` | My EQ, Nachtmodus, Eingang beim Aufwachen |
 | `DisplayControl.swift` | Auflösung und Skalierung der Displays |
+| `Log.swift` | `os.Logger` je Bereich (tv, speakers, audio, app), Subsystem `com.lgtvcompanion.mac` |
 
 ### App
 

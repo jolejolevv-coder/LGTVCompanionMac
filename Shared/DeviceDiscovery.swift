@@ -140,7 +140,7 @@ public class DeviceDiscovery: ObservableObject {
                 case .ready:
                     self?.sendSSDPSearch()
                 case .failed(let error):
-                    print("SSDP group failed: \(error)")
+                    Log.tv.error("SSDP group failed: \(error.localizedDescription, privacy: .public)")
                     DispatchQueue.main.async { self?.stopScan() }
                 default:
                     break
@@ -149,7 +149,7 @@ public class DeviceDiscovery: ObservableObject {
 
             group.start(queue: .main)
         } catch {
-            print("Failed to join SSDP multicast group: \(error)")
+            Log.tv.error("Failed to join SSDP multicast group: \(error.localizedDescription, privacy: .public)")
             isScanning = false
             return
         }
@@ -189,7 +189,7 @@ public class DeviceDiscovery: ObservableObject {
 
             group.send(content: data) { error in
                 if let error = error {
-                    print("SSDP send failed: \(error)")
+                    Log.tv.error("SSDP send failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
             // Repeat after 1s for reliability
