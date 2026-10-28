@@ -101,7 +101,7 @@ public enum WebOSStatusUpdate {
     case power(state: String)
 }
 
-public class WebOSClient: ObservableObject {
+public class WebOSClient: ObservableObject, TVTransport {
     @Published public var isConnected = false
     @Published public var isPaired = false
 
@@ -264,6 +264,14 @@ public class WebOSClient: ObservableObject {
             // (the reconnect-after-error path) is ordered correctly: the
             // teardown is enqueued first and runs before this assignment.
             self.queue.async {
+                // Never leave a previous connection running behind the new
+                // one. Once replaced, its state callbacks are ignored (they
+                // only act for the current connection), so its pending
+                // requests are failed here.
+                if let previous = self.connection {
+                    previous.cancel()
+                    self.failAllPending(with: .notConnected)
+                }
                 self.connection = newConnection
                 newConnection.start(queue: self.queue)
             }
@@ -299,6 +307,11 @@ public class WebOSClient: ObservableObject {
             self.isConnected = false
             self.isPaired = false
         }
+    }
+
+    /// The published flags, read on the main actor where they are written.
+    func linkState() async -> TVLinkState {
+        await MainActor.run { TVLinkState(isConnected: isConnected, isPaired: isPaired) }
     }
 
     // MARK: - Pairing

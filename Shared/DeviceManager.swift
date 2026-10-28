@@ -74,6 +74,8 @@ public class DeviceManager: ObservableObject {
     @Published public var assertionAllowlist: [AssertingApp] = []
 
     private var clients: [UUID: WebOSClient] = [:]
+    /// One per client: shares a running connect/register between commands.
+    private var sessions: [UUID: TVSession] = [:]
     private var powerMonitor: PowerEventMonitor?
     private var idleMonitor: UserIdleMonitor?
     private var displayMonitor: DisplayConfigurationMonitor?
@@ -144,22 +146,30 @@ public class DeviceManager: ObservableObject {
             devices[index] = device
             saveDevices()
             // Connection parameters may have changed — drop cached client.
-            clients[device.id]?.disconnect()
-            clients.removeValue(forKey: device.id)
+            dropClient(for: device.id)
         }
     }
 
     public func removeDevice(_ device: WebOSDevice) {
         devices.removeAll { $0.id == device.id }
-        clients[device.id]?.disconnect()
-        clients.removeValue(forKey: device.id)
+        dropClient(for: device.id)
         pairingKeyStore.delete(for: device.id)
         saveDevices()
     }
 
+    private func dropClient(for deviceId: UUID) {
+        clients[deviceId]?.disconnect()
+        clients.removeValue(forKey: deviceId)
+        sessions.removeValue(forKey: deviceId)
+    }
+
     public func getClient(for device: WebOSDevice) -> WebOSClient {
-        if let client = clients[device.id] {
-            return client
+        clientAndSession(for: device).client
+    }
+
+    private func clientAndSession(for device: WebOSDevice) -> (client: WebOSClient, session: TVSession) {
+        if let client = clients[device.id], let session = sessions[device.id] {
+            return (client, session)
         }
 
         let client = WebOSClient(device: device)
@@ -178,8 +188,10 @@ public class DeviceManager: ObservableObject {
                 self?.applyStatusUpdate(update, for: deviceId)
             }
         }
+        let session = TVSession(transport: client)
         clients[device.id] = client
-        return client
+        sessions[device.id] = session
+        return (client, session)
     }
 
     /// Main thread. Merges a pushed change into the published status.
@@ -270,25 +282,17 @@ public class DeviceManager: ObservableObject {
         for device: WebOSDevice,
         _ operation: (WebOSClient) async throws -> T
     ) async throws -> T {
-        let client = await MainActor.run { self.getClient(for: device) }
+        // Both dictionaries are main-actor state.
+        let (client, session) = await MainActor.run { self.clientAndSession(for: device) }
 
-        if !client.isConnected {
-            try await client.connect()
-        }
-        if !client.isPaired {
-            try await client.register()
-        }
+        // Concurrent callers share one connect/register (see TVSession).
+        try await session.ensureReady()
 
         do {
             return try await operation(client)
         } catch {
-            // Stale connection? Reconnect once and retry. Await the teardown
-            // (disconnectAndWait) before reconnecting — a fire-and-forget
-            // disconnect runs on the client's serial queue and would otherwise
-            // race connect() and cancel the brand-new connection.
-            await client.disconnectAndWait()
-            try await client.connect()
-            try await client.register()
+            // Stale connection? Reconnect once and retry.
+            try await session.reconnect()
             return try await operation(client)
         }
     }
@@ -426,7 +430,9 @@ public class DeviceManager: ObservableObject {
     ///   otherwise the TV would stay on behind a dark screen).
     public func powerOffManagedDevices(fullOff: Bool = false) async {
         // Skip TVs currently showing a non-Mac input (e.g. a console).
-        let targets = await devicesShowingMacInput(managedDevices)
+        // `devices` is published on the main actor; read it there.
+        let managed = await MainActor.run { self.managedDevices }
+        let targets = await devicesShowingMacInput(managed)
         await withTaskGroup(of: Void.self) { group in
             for device in targets {
                 group.addTask {
