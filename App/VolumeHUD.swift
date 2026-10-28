@@ -10,12 +10,14 @@ import AppKit
 import LGTVCompanionShared
 import SwiftUI
 
+@MainActor
 final class VolumeHUDModel: ObservableObject {
     @Published var level: Double = 1
     @Published var muted = false
 }
 
-/// Main thread only.
+/// Main actor.
+@MainActor
 final class VolumeHUD {
     static let shared = VolumeHUD()
 
@@ -120,9 +122,12 @@ final class VolumeHUD {
             context.duration = Self.fadeSeconds
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            // A key press during the fade made it visible again: keep it.
-            guard let panel = self?.panel, panel.alphaValue == 0 else { return }
-            panel.orderOut(nil)
+            // AppKit calls this on the main thread.
+            MainActor.assumeIsolated {
+                // A key press during the fade made it visible again: keep it.
+                guard let panel = self?.panel, panel.alphaValue == 0 else { return }
+                panel.orderOut(nil)
+            }
         })
     }
 }
