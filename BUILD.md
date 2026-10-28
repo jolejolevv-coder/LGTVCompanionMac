@@ -6,8 +6,8 @@ der Kommandozeile.
 ## Voraussetzungen
 
 - macOS 14.2 oder neuer (Core Audio Process Taps für das Software Volume)
-- Xcode 15.2 oder neuer, oder die passenden Command Line Tools
-- Swift 5.9 oder neuer
+- Xcode 16.3 oder neuer, oder die passenden Command Line Tools
+- Swift 6.1 oder neuer (Sprachmodus 6, `isolated deinit`)
 
 ## Aufbau
 

@@ -27,8 +27,9 @@ Details: `ARCHITECTURE.md`. Build and signing: `BUILD.md`.
 - `./scripts/build-release.sh [--install|--adhoc]` builds, signs, verifies the
   bundle and writes the DMG. `--install` replaces `/Applications` and
   relaunches.
-- Strict concurrency check (warnings only, Swift 5 mode stays):
-  `swift build --scratch-path /tmp/lgtv-sc -Xswiftc -strict-concurrency=complete`
+- The package builds in Swift 6 language mode (tools 6.0, needs Swift 6.1 for
+  `isolated deinit`). A clean build must have no warnings:
+  `swift build --scratch-path /tmp/lgtv-sc`
 
 ## Hard rules
 
