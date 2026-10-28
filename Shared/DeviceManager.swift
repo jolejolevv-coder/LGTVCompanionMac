@@ -48,6 +48,11 @@ public class DeviceManager: ObservableObject {
     @Published public var userIdleTimeout: TimeInterval = 300 // 5 minutes
     @Published public var mediaKeysEnabled = false
 
+    /// Message of the last TV command that failed, nil after the next command
+    /// that worked. Background polling (status refresh) does not touch it, a
+    /// TV that is switched off is a normal state there. Not shown in the UI yet.
+    @Published public private(set) var lastError: String?
+
     /// Mac-side software volume, used while the TV cannot change the volume
     /// itself (fixed-level output such as optical).
     @Published public private(set) var softwareVolumeEnabled = true
@@ -232,7 +237,7 @@ public class DeviceManager: ObservableObject {
         // 1. If the TV is merely in screen-off / standby with the network
         //    stack up, a direct command is instant — try that first.
         if device.useScreenOff {
-            if (try? await withConnectedClient(for: device) { client in
+            if (try? await withConnectedClient(for: device, reportsFailure: false) { client in
                 try await client.screenOn()
             }) != nil {
                 return
@@ -241,7 +246,7 @@ public class DeviceManager: ObservableObject {
 
         // 2. Otherwise Wake-on-LAN, repeated — single packets right after
         //    system wake are frequently lost.
-        var lastError: Error?
+        var lastWakeError: Error?
         for attempt in 0..<Self.wakeRetryCount {
             do {
                 try await WakeOnLAN.wake(
@@ -249,16 +254,17 @@ public class DeviceManager: ObservableObject {
                     ipAddress: device.ipAddress,
                     method: method
                 )
-                lastError = nil
+                lastWakeError = nil
             } catch {
-                lastError = error
+                lastWakeError = error
             }
             if attempt < Self.wakeRetryCount - 1 {
                 try await Task.sleep(nanoseconds: Self.wakeRetryDelayNs)
             }
         }
-        if let lastError = lastError {
-            throw lastError
+        if let lastWakeError = lastWakeError {
+            await recordFailure(of: "Wake on LAN", error: lastWakeError)
+            throw lastWakeError
         }
     }
 
@@ -279,8 +285,25 @@ public class DeviceManager: ObservableObject {
     }
 
     /// Connects (and pairs if needed), runs the operation, keeps connection
-    /// cached for reuse.
+    /// cached for reuse. A failure is logged and kept in `lastError`; pass
+    /// `reportsFailure: false` for background work where a TV that is off is
+    /// expected (status polling, trying a screen on before Wake on LAN).
     private func withConnectedClient<T>(
+        for device: WebOSDevice,
+        reportsFailure: Bool = true,
+        _ operation: (WebOSClient) async throws -> T
+    ) async throws -> T {
+        do {
+            let result = try await runOnConnectedClient(for: device, operation)
+            if reportsFailure { await clearLastError() }
+            return result
+        } catch {
+            if reportsFailure { await recordFailure(of: "TV command for \(device.name)", error: error) }
+            throw error
+        }
+    }
+
+    private func runOnConnectedClient<T>(
         for device: WebOSDevice,
         _ operation: (WebOSClient) async throws -> T
     ) async throws -> T {
@@ -301,12 +324,24 @@ public class DeviceManager: ObservableObject {
         }
     }
 
+    private func recordFailure(of action: String, error: Error) async {
+        let message = error.localizedDescription
+        Log.tv.error("\(action, privacy: .public) failed: \(message, privacy: .public)")
+        await MainActor.run { self.lastError = message }
+    }
+
+    private func clearLastError() async {
+        await MainActor.run {
+            if self.lastError != nil { self.lastError = nil }
+        }
+    }
+
     // MARK: - Live Status & Direct Controls (Menu Bar)
 
     /// Fetches power state + audio status and publishes it.
     public func refreshStatus(for device: WebOSDevice) async {
         var status = DeviceStatus()
-        if let result = try? await withConnectedClient(for: device, { client -> DeviceStatus in
+        if let result = try? await withConnectedClient(for: device, reportsFailure: false, { client -> DeviceStatus in
             let state = try await client.getPowerState()
             let audio = try? await client.getAudioStatus()
             return DeviceStatus(powerState: state, volume: audio?.volume, muted: audio?.muted,
@@ -380,7 +415,7 @@ public class DeviceManager: ObservableObject {
             try await powerOffDevice(device)
             powerOffSuccess = true
         } catch {
-            print("Test failed: \(error)")
+            Log.tv.error("Device test failed: \(error.localizedDescription, privacy: .public)")
         }
 
         return (powerOnSuccess, powerOffSuccess)
@@ -548,7 +583,7 @@ public class DeviceManager: ObservableObject {
     private func tvShowsMacInput(_ device: WebOSDevice) async -> Bool {
         guard let macInput = device.macInputAppId else { return true }
         guard let currentApp = try? await withConnectedClient(
-                  for: device, { try await $0.getForegroundAppInfo() }) else {
+                  for: device, reportsFailure: false, { try await $0.getForegroundAppInfo() }) else {
             return true
         }
         return currentApp == macInput
@@ -652,23 +687,30 @@ public class DeviceManager: ObservableObject {
     /// Called on the main thread (the event-tap source runs on the main run loop).
     @discardableResult
     private func handleMediaKey(_ key: MediaKeyEvent) -> Bool {
-        // Real speaker control beats everything else: it changes the level in
-        // the speakers themselves, for every source and without digital loss.
-        // If the speakers were just found unreachable, fall through.
-        if speakers.canHandleVolumeKeys {
+        // See VolumeKeyRoute.route for the order. Real speaker control beats
+        // everything else: it changes the level in the speakers themselves,
+        // for every source and without digital loss. If the speakers were just
+        // found unreachable, the route falls through to the next target.
+        let device = devices.first(where: { $0.enabled })
+        let route = VolumeKeyRoute.route(speakersCanHandleVolumeKeys: speakers.canHandleVolumeKeys,
+                                         hasEnabledTV: device != nil,
+                                         softwareVolumeActive: softwareVolumeActive,
+                                         tvCanAdjustVolume: tvCanAdjustVolume)
+        switch route {
+        case .speakers:
             speakers.handleVolumeKey(key)
             return true
-        }
-
-        guard let device = devices.first(where: { $0.enabled }) else { return false }
-
-        if softwareVolumeActive {
+        case .softwareVolume:
             handleSoftwareVolumeKey(key)
             return true
+        case .passThrough:
+            // No enabled TV, or the TV cannot change the volume and the Mac's
+            // sound is not going to a display: the keys belong to macOS.
+            return false
+        case .tv:
+            break
         }
-        // The TV cannot change the volume and the Mac's sound is not going to
-        // a display (headphones, built-in speakers): the keys belong to macOS.
-        if tvCanAdjustVolume == false { return false }
+        guard let device else { return false }
 
         switch key {
         case .volumeUp:
@@ -750,7 +792,7 @@ public class DeviceManager: ObservableObject {
 
     /// Fetches volume/mute once and publishes it so the menu-bar slider follows.
     private func publishAudioStatus(for device: WebOSDevice) async {
-        guard let audio = try? await withConnectedClient(for: device, { try await $0.getAudioStatus() }) else {
+        guard let audio = try? await withConnectedClient(for: device, reportsFailure: false, { try await $0.getAudioStatus() }) else {
             return
         }
         await MainActor.run {

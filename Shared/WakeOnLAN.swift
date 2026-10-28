@@ -57,7 +57,7 @@ public class WakeOnLAN {
     }
     
     /// Parse MAC address string into bytes
-    private static func parseMacAddress(_ mac: String) throws -> [UInt8] {
+    static func parseMacAddress(_ mac: String) throws -> [UInt8] {
         let cleaned = mac.replacingOccurrences(of: ":", with: "")
                         .replacingOccurrences(of: "-", with: "")
                         .uppercased()
@@ -85,7 +85,7 @@ public class WakeOnLAN {
     /// The magic packet consists of:
     /// - 6 bytes of 0xFF
     /// - 16 repetitions of the target MAC address
-    private static func createMagicPacket(macBytes: [UInt8]) -> Data {
+    static func createMagicPacket(macBytes: [UInt8]) -> Data {
         var packet = Data()
         
         // Add 6 bytes of 0xFF

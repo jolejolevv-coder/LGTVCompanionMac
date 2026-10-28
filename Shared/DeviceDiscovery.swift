@@ -29,6 +29,37 @@ public struct DiscoveredDevice {
     }
 }
 
+/// The parts of an SSDP answer the scan uses.
+struct SSDPResponse: Equatable {
+    /// Device description URL (LOCATION header), trimmed.
+    var location: String?
+    /// Unique service name (USN header).
+    var usn: String?
+    /// SERVER header, for example "Linux/4.4 UPnP/1.0 webOS/..."
+    var server: String?
+    /// Whether the answer mentions webOS or LG. Other UPnP devices (routers,
+    /// media servers) answer the same search and are ignored.
+    var isFromLGWebOS: Bool
+
+    /// Header names are case-insensitive. The first occurrence of a header wins.
+    static func parse(_ response: String) -> SSDPResponse {
+        var headers: [String: String] = [:]
+        for line in response.components(separatedBy: "\r\n") {
+            // The status line ("HTTP/1.1 200 OK") has no colon and is skipped.
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            if headers[name] == nil { headers[name] = value }
+        }
+
+        let lowercased = response.lowercased()
+        let isLG = lowercased.contains("webos") || lowercased.contains("lg electronics")
+            || lowercased.contains("lge")
+        return SSDPResponse(location: headers["location"], usn: headers["usn"],
+                            server: headers["server"], isFromLGWebOS: isLG)
+    }
+}
+
 /// Remembers which addresses a scan already handled. A TV answers each
 /// M-SEARCH more than once (two search targets, each sent twice); every
 /// answer would otherwise cost a description fetch, a port probe and a MAC
@@ -109,7 +140,7 @@ public class DeviceDiscovery: ObservableObject {
                 case .ready:
                     self?.sendSSDPSearch()
                 case .failed(let error):
-                    print("SSDP group failed: \(error)")
+                    Log.tv.error("SSDP group failed: \(error.localizedDescription, privacy: .public)")
                     DispatchQueue.main.async { self?.stopScan() }
                 default:
                     break
@@ -118,7 +149,7 @@ public class DeviceDiscovery: ObservableObject {
 
             group.start(queue: .main)
         } catch {
-            print("Failed to join SSDP multicast group: \(error)")
+            Log.tv.error("Failed to join SSDP multicast group: \(error.localizedDescription, privacy: .public)")
             isScanning = false
             return
         }
@@ -158,7 +189,7 @@ public class DeviceDiscovery: ObservableObject {
 
             group.send(content: data) { error in
                 if let error = error {
-                    print("SSDP send failed: \(error)")
+                    Log.tv.error("SSDP send failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
             // Repeat after 1s for reliability
@@ -172,12 +203,11 @@ public class DeviceDiscovery: ObservableObject {
     private func parseSSDPResponse(_ data: Data, from endpoint: NWEndpoint?) {
         // Tag any device produced from this response with the current scan.
         let generation = scanGeneration
-        guard let response = String(data: data, encoding: .utf8) else { return }
+        guard let text = String(data: data, encoding: .utf8) else { return }
 
         // Only handle search responses / announcements from LG WebOS devices
-        let lowercased = response.lowercased()
-        guard lowercased.contains("webos") || lowercased.contains("lg electronics")
-                || lowercased.contains("lge") else { return }
+        let response = SSDPResponse.parse(text)
+        guard response.isFromLGWebOS else { return }
 
         // Extract IP address from the response's source endpoint
         var ipAddress = ""
@@ -186,15 +216,8 @@ public class DeviceDiscovery: ObservableObject {
             ipAddress = "\(host)".components(separatedBy: "%").first ?? "\(host)"
         }
 
-        // Extract LOCATION header to get device description URL
-        var locationURL: String?
-        for line in response.components(separatedBy: "\r\n") {
-            if line.uppercased().hasPrefix("LOCATION:") {
-                locationURL = String(line.dropFirst("LOCATION:".count))
-                    .trimmingCharacters(in: .whitespaces)
-                break
-            }
-        }
+        // The LOCATION header holds the device description URL
+        let locationURL = response.location
 
         let descriptionURL = locationURL.flatMap { URL(string: $0) }
         // Prefer the IP from the LOCATION URL if we couldn't resolve one

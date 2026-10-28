@@ -44,12 +44,14 @@ und `LGTVCompanionApp` (SwiftUI). Externe Abhängigkeiten gibt es keine.
 | `DisplaySleepAssertions.swift` | Welche App hält gerade den Bildschirm wach (Videowiedergabe) |
 | `MediaKeyMonitor.swift` | Lautstärketasten abfangen |
 | `SoftwareVolume.swift` | Rechenregeln: Kurve, Stufen, Moduswahl |
+| `VolumeKeyRoute.swift` | Wohin eine Lautstärketaste geht: Lautsprecher, Software Volume, TV, macOS |
 | `SoftwareVolumeController.swift` | Mac Ton per Core Audio Tap dämpfen |
 | `EdifierProtocol.swift` | Frames des Edifier Protokolls bauen und lesen |
 | `EdifierSpeakerController.swift` | Bluetooth Verbindung zu den Lautsprechern |
 | `SpeakerSound.swift` | Klangwahl, EQ Kurven (Techno, Hip-Hop), Zeitplan des Nachtmodus |
 | `SpeakerAutomation.swift` | My EQ, Nachtmodus, Eingang beim Aufwachen |
 | `DisplayControl.swift` | Auflösung und Skalierung der Displays |
+| `Log.swift` | `os.Logger` je Bereich (tv, speakers, audio, app), Subsystem `com.lgtvcompanion.mac` |
 
 ### App
 
@@ -84,7 +86,7 @@ einer seriellen Queue.
 
 ## Wohin ein Druck auf die Lautstärketaste geht
 
-Entschieden wird in `DeviceManager.handleMediaKey`, in dieser Reihenfolge:
+Entschieden wird in `VolumeKeyRoute.route` (reine Funktion, getestet), aufgerufen von `DeviceManager.handleMediaKey`, in dieser Reihenfolge:
 
 1. **Lautsprecher**, wenn die Bluetooth Steuerung eingeschaltet ist und sie
    nicht gerade als unerreichbar gelten. Regelt im Lautsprecher selbst.

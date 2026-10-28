@@ -29,7 +29,30 @@
 - [x] TV bleibt an, solange ein anderer Eingang läuft oder ein Video spielt
 - [x] Auflösung und Skalierung der Displays im Menü
 - [x] Lokale Signatur, damit Freigaben Updates überleben
-- [x] Tests (86) und Ausführung in der CI
+- [x] Tests und Ausführung in der CI (125 Tests, Stand 28.10.2026)
+
+## ✅ Seit 1.2.0 (Stand 28.10.2026, BAMA Phase 1 und 2)
+
+Stabilität (Phase 1):
+- [x] Gleichzeitige Befehle teilen sich einen connect und register (`TVSession`)
+- [x] `isPaired` wird beim Verbindungsabbruch zurückgesetzt
+- [x] Wiederholung eines Befehls nur bei vorübergehenden Fehlern
+- [x] Sleep und Wake Automatik startet beim Programmstart, ohne offenes Fenster
+- [x] Lautstärketaste ohne Core Audio Abfrage und ohne Speichern pro Tastendruck
+- [x] Event Tap wird beim Stoppen invalidiert, kein `fatalError` mehr in der UI
+- [x] Launch at login zeigt Fehler und behandelt die Freigabe durch den Nutzer
+- [x] Timer Toleranz, weniger Schlüsselbund Schreibzugriffe, ein Scan Durchlauf je IP
+
+Testbarkeit und Werkzeug (Phase 2):
+- [x] Tastenweg als reine Funktion `VolumeKeyRoute` mit Tabellentest
+- [x] Tests für Wake on LAN Paket, SSDP Parsing, Register und Request Nachrichten
+- [x] `os.Logger` (`Log`) statt `print`, `DeviceManager.lastError` (noch ohne Anzeige)
+- [x] `build-release.sh`: Prüfschritt für Signatur, Info.plist und Usage Strings,
+      Abbruch ohne Zertifikat, `--install`, Build Nummer in `CFBundleVersion`
+- [x] `CLAUDE.md` im Projekt
+
+Offen aus dem BAMA Plan: Phase 3 (Bedienung), 4 (Tastatur, VoiceOver),
+5 (Swift 6), siehe `specs/features/bama-review-improvements.md`.
 
 Nicht mehr vorhanden: der separate Daemon. Die App läuft selbst in der
 Menüleiste und übernimmt dessen Aufgabe.
@@ -122,7 +145,7 @@ Menüleiste und übernimmt dessen Aufgabe.
 ## 🔧 Technische Schulden
 
 - [ ] Proper Error Types statt NSError
-- [ ] Logger Framework statt print()
+- [x] Logger Framework statt print() (`os.Logger`, Phase 2)
 - [ ] Dependency Injection
 - [ ] Repository Pattern für Persistence
 - [ ] MVVM refactoring
@@ -163,11 +186,11 @@ Menüleiste und übernimmt dessen Aufgabe.
 ## 🧪 Testing
 
 ### Unit Tests
-- [ ] WebOSClient Tests
-- [ ] WakeOnLAN Tests
-- [ ] DeviceDiscovery Tests
+- [x] WebOSClient Tests (Statusauswertung, Register und Request Nachricht; Verbindung nur über Fake `TVTransport`)
+- [x] WakeOnLAN Tests
+- [x] DeviceDiscovery Tests (SSDP Antwort, Scan Filter; Scan selbst braucht ein Netz)
 - [ ] PowerEventMonitor Tests
-- [ ] DeviceManager Tests
+- [ ] DeviceManager Tests (teilweise: `VolumeKeyRoute`, Geräte Ablage; der Manager selbst nicht)
 
 ### Integration Tests
 - [ ] End-to-End Pairing Flow
