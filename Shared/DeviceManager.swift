@@ -291,7 +291,9 @@ public class DeviceManager: ObservableObject {
         do {
             return try await operation(client)
         } catch {
-            // Stale connection? Reconnect once and retry.
+            // Stale connection? Reconnect once and retry, but only for
+            // errors a fresh connection can fix.
+            guard TVSession.isTransient(error) else { throw error }
             try await session.reconnect()
             return try await operation(client)
         }

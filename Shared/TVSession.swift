@@ -84,4 +84,17 @@ actor TVSession {
             try await transport.register()
         }
     }
+
+    /// Whether a failed command is worth one reconnect and retry. A dropped
+    /// socket or a slow TV is; a cancelled task or a command the TV refused
+    /// would fail the same way again.
+    static func isTransient(_ error: Error) -> Bool {
+        guard let webOSError = error as? WebOSError else { return false }
+        switch webOSError {
+        case .notConnected, .timeout, .networkError:
+            return true
+        case .invalidResponse, .pairingRequired, .pairingRejected, .commandFailed:
+            return false
+        }
+    }
 }

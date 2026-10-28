@@ -98,4 +98,16 @@ final class TVSessionTests: XCTestCase {
         XCTAssertEqual(transport.connects, 2)
         XCTAssertEqual(transport.registers, 2)
     }
+
+    func testOnlyTransientErrorsAreRetried() {
+        XCTAssertTrue(TVSession.isTransient(WebOSError.notConnected))
+        XCTAssertTrue(TVSession.isTransient(WebOSError.timeout))
+        XCTAssertTrue(TVSession.isTransient(WebOSError.networkError(URLError(.networkConnectionLost))))
+
+        XCTAssertFalse(TVSession.isTransient(WebOSError.commandFailed("401 insufficient permissions")))
+        XCTAssertFalse(TVSession.isTransient(WebOSError.pairingRejected))
+        XCTAssertFalse(TVSession.isTransient(WebOSError.pairingRequired))
+        XCTAssertFalse(TVSession.isTransient(WebOSError.invalidResponse))
+        XCTAssertFalse(TVSession.isTransient(CancellationError()))
+    }
 }
