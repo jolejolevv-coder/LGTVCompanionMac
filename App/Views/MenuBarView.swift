@@ -49,13 +49,22 @@ struct MenuBarView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Button {
                 openMainWindow()
             } label: {
                 Label("Open LGTV Companion", systemImage: "macwindow")
-                    .font(.system(size: 12))
             }
+
+            // Settings only exist as the Settings scene (⌘,). The link opens
+            // it; an accessory app has to bring itself to the front first.
+            SettingsLink {
+                Text("Settings…")
+            }
+            .simultaneousGesture(TapGesture().onEnded {
+                NSApp.activate(ignoringOtherApps: true)
+            })
+            .help("Open the settings (⌘,)")
 
             Spacer()
 
@@ -73,6 +82,7 @@ struct MenuBarView: View {
             .help("Quit LGTV Companion (⌘Q)")
         }
         .buttonStyle(.plain)
+        .font(.subheadline)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 4)
     }

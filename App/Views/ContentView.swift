@@ -13,7 +13,6 @@ struct ContentView: View {
     @State private var selectedDevice: WebOSDevice?
     @State private var showingAddDevice = false
     @State private var showingScanner = false
-    @State private var showingSettings = false
 
     /// Name of the selected TV, read from the manager so a rename shows up at once.
     private var windowTitle: String {
@@ -53,13 +52,6 @@ struct ContentView: View {
                     Label("Add TV", systemImage: "plus")
                 }
                 .help("Add a TV manually")
-
-                Button {
-                    showingSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Settings")
             }
         }
         .sheet(isPresented: $showingAddDevice) {
@@ -69,19 +61,6 @@ struct ContentView: View {
         .sheet(isPresented: $showingScanner) {
             DeviceScannerView()
                 .environmentObject(deviceManager)
-        }
-        .sheet(isPresented: $showingSettings) {
-            VStack(spacing: 0) {
-                SettingsView()
-                    .environmentObject(deviceManager)
-                Divider()
-                HStack {
-                    Spacer()
-                    Button("Done") { showingSettings = false }
-                        .keyboardShortcut(.defaultAction)
-                }
-                .padding(12)
-            }
         }
         .task {
             deviceManager.ensureMediaKeyTap()
