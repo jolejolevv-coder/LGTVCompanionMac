@@ -62,6 +62,7 @@ struct ContentView: View {
             DeviceScannerView()
                 .environmentObject(deviceManager)
         }
+        .background(WindowAccessor { MainWindowGate.shared.windowAttached($0) })
         .task {
             deviceManager.ensureMediaKeyTap()
             await deviceManager.refreshAllStatuses()

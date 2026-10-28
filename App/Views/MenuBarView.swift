@@ -62,7 +62,7 @@ struct MenuBarView: View {
                 Text("Settings…")
             }
             .simultaneousGesture(TapGesture().onEnded {
-                NSApp.activate(ignoringOtherApps: true)
+                WindowPresence.shared.activateForWindow()
             })
             .help("Open the settings (⌘,)")
 
@@ -88,8 +88,7 @@ struct MenuBarView: View {
     }
 
     private func openMainWindow() {
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
+        MainWindowGate.shared.open(using: openWindow)
     }
 }
 

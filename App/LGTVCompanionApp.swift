@@ -14,13 +14,11 @@ struct LGTVCompanionApp: App {
     @StateObject private var deviceManager = DeviceManager.shared
     
     var body: some Scene {
-        WindowGroup(id: "main") {
+        // One main window, opened on request. It does not open at launch.
+        Window("LGTV Companion", id: MainWindowGate.windowID) {
             ContentView()
                 .environmentObject(deviceManager)
                 .frame(minWidth: 800, minHeight: 600)
-                .onAppear {
-                    deviceManager.startPowerEventMonitoring()
-                }
         }
         .commands {
             CommandGroup(replacing: .appInfo) {
@@ -52,10 +50,9 @@ struct LGTVCompanionApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // When run as a SwiftPM executable (no app bundle), the process
-        // starts without a Dock icon or focus — fix that.
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // Menu bar only. WindowPresence adds the Dock icon and the app menu
+        // while the main window or the Settings window is open.
+        WindowPresence.shared.start()
 
         // App icon (Dock) — in a packaged .app, CFBundleIconFile in Info.plist handles
         // the icon automatically; this call is a belt-and-suspenders fallback and also
@@ -80,8 +77,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DeviceManager.shared.ensureMediaKeyTap()
         }
 
-        // Sleep/wake automation must run without a window too. The views
-        // still call this; it returns at once when already running.
+        // Sleep/wake automation must run without a window. This is the one
+        // place that starts it; the views only call it as a safety net and it
+        // returns at once when already running.
         DeviceManager.shared.startPowerEventMonitoring()
     }
 
