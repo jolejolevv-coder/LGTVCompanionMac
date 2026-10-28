@@ -378,6 +378,24 @@ public class DeviceManager: ObservableObject {
         await refreshStatus(for: device)
     }
 
+    /// Builds a fresh connection and registers with the TV, even if the old
+    /// one still looks healthy. Returns once the TV confirmed the pairing
+    /// (the user may have to accept a prompt on the TV). Goes through the
+    /// device's `TVSession`, so it cannot race another command's connect.
+    public func pairDevice(_ device: WebOSDevice) async throws {
+        guard device.enabled else {
+            throw DeviceManagerError.deviceDisabled
+        }
+        let session = await MainActor.run { self.clientAndSession(for: device).session }
+        do {
+            try await session.reconnect()
+            await clearLastError()
+        } catch {
+            await recordFailure(of: "Pairing \(device.name)", error: error)
+            throw error
+        }
+    }
+
     /// Reads the TV's current foreground input id (read-only). Used by the UI
     /// to capture which input the Mac is connected to (the "Detect" button).
     public func readForegroundInput(for device: WebOSDevice) async throws -> String? {
