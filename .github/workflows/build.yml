@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     # Creating the release on a tag needs write access to the repository
     # contents; the default token is read-only.
     permissions:
@@ -17,9 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Swift 6 language mode and isolated deinit need the Swift 6.1 compiler.
+      # Swift 6 language mode and `isolated deinit` need Swift 6.2 or newer
+      # (Xcode 26). Pick the newest Xcode 26 on the runner.
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          swift --version
 
       - name: Test
         run: swift test

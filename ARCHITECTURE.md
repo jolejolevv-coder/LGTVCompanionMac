@@ -148,7 +148,7 @@ Queue ist (Registrierung mit `queue: .main` oder Hauptrunloop).
 
 | Typ | Isolation | Begründung |
 |---|---|---|
-| `DeviceManager`, `SpeakerAutomation`, `EdifierSpeakerController`, `SoftwareVolumeController`, `MediaKeyMonitor`, `PowerEventMonitor`, `UserIdleMonitor`, `DisplayConfigurationMonitor`, `DeviceDiscovery` | `@MainActor` | Halten veröffentlichten Zustand oder hängen an Hauptrunloop und Main Queue. Deinit über `isolated deinit` (braucht Swift 6.1, also Xcode 16.3 oder neuer). |
+| `DeviceManager`, `SpeakerAutomation`, `EdifierSpeakerController`, `SoftwareVolumeController`, `MediaKeyMonitor`, `PowerEventMonitor`, `UserIdleMonitor`, `DisplayConfigurationMonitor`, `DeviceDiscovery` | `@MainActor` | Halten veröffentlichten Zustand oder hängen an Hauptrunloop und Main Queue. Deinit über `isolated deinit` (braucht Swift 6.2, also Xcode 26 oder neuer). |
 | `AppDelegate`, `VolumeHUD`, `VolumeHUDModel` | `@MainActor` | AppKit und SwiftUI. |
 | `WebOSClient` | `@unchecked Sendable`, eigene serielle Queue | Jeder Zugriff auf veränderlichen Zustand läuft auf `queue`. Die veröffentlichten Werte `isConnected` und `isPaired` sind `@MainActor` und werden über `publishLinkState` gesetzt. Die Callbacks `onPairingKeyUpdated` und `onStatusUpdate` sind `@Sendable`. |
 | `TVSession` | `actor` | Serialisiert Verbindungsversuche je Gerät. |

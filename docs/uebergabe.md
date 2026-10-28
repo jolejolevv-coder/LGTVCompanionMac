@@ -84,3 +84,11 @@ Tab auf den Lautstärkeslider im Panel, Pfeiltasten ändern ihn, ein Befehl
 etwa 0,3 s nach dem Loslassen; Tab durch Input, Sound, Subwoofer Kapseln;
 VoiceOver sagt "Volume N percent" beim Halten der Taste; mit "Transparenz
 reduzieren" hat das HUD einen festen Hintergrund.
+
+## CI nach Phase 5 (28.10.2026)
+CI war rot: Xcode 16.4 hat Swift 6.1, `isolated deinit` braucht 6.2. Workflow
+auf `macos-26` mit neuestem Xcode 26 umgestellt. Bleibt sie rot: Fehler mit
+`gh run view <id> --log-failed | grep error:` lesen; Kandidat ist der Fehler
+"non-sendable result type T" in `Shared/DeviceManager.swift` runOnConnectedClient
+(Fix: `T: Sendable`). Phasen 3 und 4 waren in der CI schon rot (macos-15,
+Swift 6.1 strenger als lokal 6.4), mit Phase 5 überholt.
