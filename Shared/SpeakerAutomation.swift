@@ -46,6 +46,13 @@ public final class SpeakerAutomation: ObservableObject {
         static let wakeInput = "lgtvcompanion.speakers.wakeInput"
         static let scheduleOwnsNight = "lgtvcompanion.speakers.scheduleOwnsNight"
         static let lastScheduleVerdict = "lgtvcompanion.speakers.lastScheduleVerdict"
+
+        /// Every key this class writes. Reset removes all of them.
+        static let all = [
+            myEQ, nightActive, nightScheduleEnabled, nightStart, nightEnd, nightVolumeLimit,
+            nightSubOut, subOutBeforeNight, wakeInputEnabled, wakeInput, scheduleOwnsNight,
+            lastScheduleVerdict
+        ]
     }
 
     private let speakers: EdifierSpeakerController
@@ -130,6 +137,29 @@ public final class SpeakerAutomation: ObservableObject {
 
     deinit {
         scheduleTimer?.invalidate()
+    }
+
+    /// Back to a fresh install: own EQ curve, night mode with schedule and
+    /// the wake input switch return to their defaults. Does not talk to the
+    /// speakers; the settings stored in them stay as they are.
+    public func resetSettings() {
+        for key in Key.all {
+            defaults.removeObject(forKey: key)
+        }
+        myEQ = SpeakerSoundLibrary.flatGains
+        nightModeActive = false
+        nightScheduleEnabled = false
+        nightSchedule = NightSchedule(startMinutes: Self.defaultNightStart, endMinutes: Self.defaultNightEnd)
+        nightVolumeLimit = Self.defaultNightVolumeLimit
+        nightSubOut = .low
+        wakeInputEnabled = false
+        wakeInput = .optical
+
+        subOutBeforeNight = nil
+        nightSubOutApplied = false
+        restoreSubOutPending = false
+        wakeInputPending = false
+        speakers.setVolumeLimit(nil)
     }
 
     // MARK: - Sound

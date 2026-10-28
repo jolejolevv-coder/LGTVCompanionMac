@@ -2,7 +2,7 @@
 //  AddDeviceView.swift
 //  LGTV Companion
 //
-//  View for manually adding a device
+//  View for manually adding a TV
 //
 
 import LGTVCompanionShared
@@ -28,7 +28,7 @@ struct AddDeviceView: View {
         VStack(spacing: 0) {
             // Header
             VStack(alignment: .leading, spacing: 8) {
-                Text("Add Device Manually")
+                Text("Add TV")
                     .font(.title2)
                     .fontWeight(.bold)
                 
@@ -44,7 +44,7 @@ struct AddDeviceView: View {
             // Form
             Form {
                 Section {
-                    TextField("Device Name", text: $name)
+                    TextField("TV Name", text: $name)
                         .textFieldStyle(.roundedBorder)
                     
                     TextField("IP Address", text: $ipAddress)
@@ -95,9 +95,9 @@ struct AddDeviceView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text("1. Turn on your TV")
-                            Text("2. Go to Settings → All Settings → Connection → Network")
-                            Text("3. Select 'Wired Connection (Ethernet)' or 'Wi-Fi Connection'")
-                            Text("4. View the 'IP Address' and 'MAC Address'")
+                            Text("2. Open All Settings, then Connection, then Network")
+                            Text("3. Select Wired Connection (Ethernet) or Wi-Fi Connection")
+                            Text("4. Read the IP Address and MAC Address")
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -119,7 +119,7 @@ struct AddDeviceView: View {
                 
                 Spacer()
                 
-                Button("Add Device") {
+                Button("Add TV") {
                     addDevice()
                 }
                 .keyboardShortcut(.defaultAction)

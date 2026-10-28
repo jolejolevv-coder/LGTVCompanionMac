@@ -15,19 +15,49 @@ struct DeviceDetailView: View {
     @State private var isTesting = false
     @State private var isDetecting = false
     @State private var selectedWOLMethod: WakeOnLANMethod = .broadcast
-    
+    /// The device as last written to the manager's store. Autosave compares
+    /// against it so only a real edit is saved.
+    @State private var lastSaved: WebOSDevice
+    @State private var autosaveTask: Task<Void, Never>?
+    /// Success messages shown in the row of the action, cleared after a while.
+    @State private var statusLines: [StatusRow: StatusLine] = [:]
+
+    /// Wait this long after the last edit before saving, so typing an IP
+    /// address does not save (and reconnect) on every key.
+    private static let autosaveDelaySeconds: TimeInterval = 0.5
+    /// How long a success message stays next to its button.
+    private static let statusDisplaySeconds: TimeInterval = 4
+
+    private enum StatusRow: Hashable {
+        case macInput, connectionTest, pairing
+    }
+
+    private struct StatusLine: Equatable {
+        let id = UUID()
+        let text: String
+    }
+
+    init(device: Binding<WebOSDevice>) {
+        _device = device
+        _lastSaved = State(initialValue: device.wrappedValue)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             headerBar
             Divider()
 
             Form {
-                Section("Device") {
+                Section("TV") {
                     deviceInfoSection
                 }
 
-                Section("Automation") {
+                Section {
                     automationSettingsSection
+                } header: {
+                    Text("Automation")
+                } footer: {
+                    Text("Screen-off keeps the TV running so it resumes at once. With a Mac input set, the TV stays on while it shows another input.")
                 }
 
                 Section("Network") {
@@ -41,13 +71,12 @@ struct DeviceDetailView: View {
             .formStyle(.grouped)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Save") {
-                    deviceManager.updateDevice(device)
-                }
-                .keyboardShortcut("s", modifiers: .command)
-            }
+        .onChange(of: device) { _, _ in
+            scheduleAutosave()
+        }
+        .onDisappear {
+            // Selecting another TV within the delay must not lose the edit.
+            saveNow()
         }
         .task {
             await deviceManager.refreshStatus(for: device)
@@ -135,8 +164,7 @@ struct DeviceDetailView: View {
             TextField("Name", text: $device.name)
 
             Toggle("Enabled", isOn: $device.enabled)
-                .tint(.green)
-                .help("Enable or disable this device")
+                .help("Enable or disable this TV")
 
             LabeledContent("Pairing") {
                 if device.pairingKey != nil {
@@ -152,42 +180,35 @@ struct DeviceDetailView: View {
     
     private var automationSettingsSection: some View {
         Group {
-            Toggle(isOn: $device.autoManage) {
-                Text("Follow Mac sleep & wake")
-                Text("Turns the TV off when the Mac sleeps or shuts down, and back on when it wakes.")
-            }
-            .tint(.green)
+            Toggle("Follow Mac sleep and wake", isOn: $device.autoManage)
+                .help("Turns the TV off when the Mac sleeps or shuts down, and back on when it wakes")
 
-            Toggle(isOn: $device.useScreenOff) {
-                Text("Use screen-off instead of power-off")
-                Text("The picture turns off but the TV stays on — it resumes instantly without rebooting. Recommended for monitor use.")
-            }
-            .tint(.green)
+            Toggle("Use screen-off instead of power-off", isOn: $device.useScreenOff)
+                .help("The picture turns off but the TV stays on and resumes instantly. Recommended for monitor use.")
 
             LabeledContent("Mac input") {
                 HStack(spacing: 8) {
                     if isDetecting {
                         ProgressView().controlSize(.small)
                     }
+                    statusLabel(for: .macInput)
                     Text(device.macInputAppId.map(Self.inputLabel) ?? "Not set")
                         .foregroundStyle(.secondary)
                     Button(device.macInputAppId == nil ? "Detect" : "Re-detect") {
                         detectMacInput()
                     }
+                    .help("Press while the TV shows your Mac")
                     .disabled(isDetecting || !device.enabled)
                     if device.macInputAppId != nil {
                         Button("Clear") {
                             device.macInputAppId = nil
-                            deviceManager.updateDevice(device)
+                            saveNow()
                         }
                         .disabled(isDetecting)
                     }
                 }
             }
 
-            Text("While set, the TV won't auto power-off whenever it's showing another input (e.g. a console on a different HDMI). Press Detect while the TV is showing your Mac.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -217,6 +238,12 @@ struct DeviceDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+
+            if !hasValidNetworkSettings {
+                Text("Changes are saved once the IP and MAC address are valid.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -228,6 +255,7 @@ struct DeviceDetailView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
+                    statusLabel(for: .connectionTest)
                     Button("Power On") { testPowerOn() }
                         .disabled(isTesting || !device.enabled)
                     Button("Power Off") { testPowerOff() }
@@ -236,100 +264,187 @@ struct DeviceDetailView: View {
             }
 
             LabeledContent("Pairing") {
-                Button(isPairing ? "Pairing…" : (device.pairingKey != nil ? "Pair Again" : "Pair Device")) {
-                    pairDevice()
+                HStack(spacing: 8) {
+                    if isPairing {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    statusLabel(for: .pairing)
+                    pairButton
                 }
-                .disabled(isPairing || !device.enabled)
             }
         }
     }
-    
+
+    private var pairButton: some View {
+        Button(isPairing ? "Pairing…" : (device.pairingKey != nil ? "Pair Again" : "Pair TV")) {
+            pairDevice()
+        }
+        .disabled(isPairing || !device.enabled)
+    }
+
+    // MARK: - Autosave
+
+    private var hasValidNetworkSettings: Bool {
+        WakeOnLAN.isValidIPAddress(device.ipAddress) && WakeOnLAN.isValidMacAddress(device.macAddress)
+    }
+
+    /// True if anything but the pairing key differs from the stored device.
+    /// The key is written by the manager after pairing; saving because of it
+    /// would drop the connection that was just built.
+    private var hasUnsavedChanges: Bool {
+        var current = device
+        var stored = lastSaved
+        current.pairingKey = nil
+        stored.pairingKey = nil
+        return current != stored
+    }
+
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(Self.autosaveDelaySeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            saveNow()
+        }
+    }
+
+    /// Writes the device to the store if it changed and IP and MAC are valid.
+    /// An invalid edit stays in the form and is saved once it becomes valid.
+    private func saveNow() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        guard hasUnsavedChanges, hasValidNetworkSettings else { return }
+        lastSaved = device
+        deviceManager.updateDevice(device)
+    }
+
+    // MARK: - Status lines
+
+    @ViewBuilder
+    private func statusLabel(for row: StatusRow) -> some View {
+        if let line = statusLines[row] {
+            Label(line.text, systemImage: "checkmark.circle.fill")
+                .labelStyle(.titleAndIcon)
+                .font(.callout)
+                .foregroundStyle(.green)
+                .transition(.opacity)
+        }
+    }
+
+    /// Shows `text` in the row for a few seconds.
+    private func showStatus(_ text: String, in row: StatusRow) {
+        let line = StatusLine(text: text)
+        withAnimation { statusLines[row] = line }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(Self.statusDisplaySeconds * 1_000_000_000))
+            // Only clear our own message, not a newer one.
+            if statusLines[row] == line {
+                withAnimation { statusLines[row] = nil }
+            }
+        }
+    }
+
+    /// For failures the user has to act on. Titled by what failed.
+    private func showFailure(_ title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
     // MARK: - Actions
-    
+
     private func pairDevice() {
         isPairing = true
-        
+        let target = device
+
         Task {
             do {
-                let client = await MainActor.run { deviceManager.getClient(for: device) }
-                try await client.connect()
-                // register() returns only after the TV confirmed the pairing
-                // (accept the prompt on the TV if it appears)
-                try await client.register()
-
+                // Returns after the TV confirmed the pairing (accept the
+                // prompt on the TV if it appears).
+                try await deviceManager.pairDevice(target)
                 await MainActor.run {
                     isPairing = false
-                    showSuccess("Pairing successful!")
+                    showStatus("Paired", in: .pairing)
                 }
             } catch {
                 await MainActor.run {
                     isPairing = false
-                    showError("Pairing failed: \(error.localizedDescription)")
+                    showFailure("Unable to Pair",
+                                message: "\(error.localizedDescription). Make sure the TV is on and on the same network as this Mac, then accept the prompt on the TV.")
                 }
             }
         }
     }
-    
+
     private func testPowerOn() {
         isTesting = true
-        
-        Task {
-            do {
-                try await deviceManager.powerOnDevice(device, method: selectedWOLMethod)
-                
-                await MainActor.run {
-                    isTesting = false
-                    showSuccess("Power on command sent successfully")
-                }
-            } catch {
-                await MainActor.run {
-                    isTesting = false
-                    showError("Power on failed: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-    
-    private func testPowerOff() {
-        isTesting = true
-        
-        Task {
-            do {
-                try await deviceManager.powerOffDevice(device)
-                
-                await MainActor.run {
-                    isTesting = false
-                    showSuccess("Power off command sent successfully")
-                }
-            } catch {
-                await MainActor.run {
-                    isTesting = false
-                    showError("Power off failed: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-    
-    private func detectMacInput() {
-        isDetecting = true
+        let target = device
+        let method = selectedWOLMethod
 
         Task {
             do {
-                let appId = try await deviceManager.readForegroundInput(for: device)
+                try await deviceManager.powerOnDevice(target, method: method)
+                await MainActor.run {
+                    isTesting = false
+                    showStatus("Power on sent", in: .connectionTest)
+                }
+            } catch {
+                await MainActor.run {
+                    isTesting = false
+                    showFailure("Unable to Power On",
+                                message: "\(error.localizedDescription). Check the MAC address and that the TV and this Mac are on the same network.")
+                }
+            }
+        }
+    }
+
+    private func testPowerOff() {
+        isTesting = true
+        let target = device
+
+        Task {
+            do {
+                try await deviceManager.powerOffDevice(target)
+                await MainActor.run {
+                    isTesting = false
+                    showStatus("Power off sent", in: .connectionTest)
+                }
+            } catch {
+                await MainActor.run {
+                    isTesting = false
+                    showFailure("Unable to Reach TV",
+                                message: "\(error.localizedDescription). Check that the TV is on and reachable at \(target.ipAddress).")
+                }
+            }
+        }
+    }
+
+    private func detectMacInput() {
+        isDetecting = true
+        let target = device
+
+        Task {
+            do {
+                let appId = try await deviceManager.readForegroundInput(for: target)
                 await MainActor.run {
                     isDetecting = false
                     if let appId = appId {
                         device.macInputAppId = appId
-                        deviceManager.updateDevice(device)
-                        showSuccess("Mac input set to \(Self.inputLabel(appId)).")
+                        saveNow()
+                        showStatus("Set to \(Self.inputLabel(appId))", in: .macInput)
                     } else {
-                        showError("The TV didn't report a current input. Make sure it's on and showing your Mac.")
+                        showFailure("Unable to Detect Mac Input",
+                                    message: "The TV didn't report a current input. Make sure it's on and showing your Mac, then try again.")
                     }
                 }
             } catch {
                 await MainActor.run {
                     isDetecting = false
-                    showError("Couldn't read the TV input: \(error.localizedDescription)")
+                    showFailure("Unable to Detect Mac Input",
+                                message: "\(error.localizedDescription). Make sure the TV is on and reachable, then try again.")
                 }
             }
         }
@@ -347,21 +462,5 @@ struct DeviceDetailView: View {
             return number.isEmpty ? "HDMI" : "HDMI \(number)"
         }
         return short.uppercased()
-    }
-
-    private func showSuccess(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Success"
-        alert.informativeText = message
-        alert.alertStyle = .informational
-        alert.runModal()
-    }
-    
-    private func showError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Error"
-        alert.informativeText = message
-        alert.alertStyle = .critical
-        alert.runModal()
     }
 }

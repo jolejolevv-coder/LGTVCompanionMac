@@ -49,13 +49,22 @@ struct MenuBarView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Button {
                 openMainWindow()
             } label: {
                 Label("Open LGTV Companion", systemImage: "macwindow")
-                    .font(.system(size: 12))
             }
+
+            // Settings only exist as the Settings scene (⌘,). The link opens
+            // it; an accessory app has to bring itself to the front first.
+            SettingsLink {
+                Text("Settings…")
+            }
+            .simultaneousGesture(TapGesture().onEnded {
+                WindowPresence.shared.activateForWindow()
+            })
+            .help("Open the settings (⌘,)")
 
             Spacer()
 
@@ -65,23 +74,21 @@ struct MenuBarView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .help("Refresh")
+            .help("Check the TV and speaker status")
 
-            Button {
+            Button("Quit") {
                 NSApp.terminate(nil)
-            } label: {
-                Image(systemName: "power")
             }
-            .help("Quit")
+            .help("Quit LGTV Companion (⌘Q)")
         }
         .buttonStyle(.plain)
+        .font(.subheadline)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 4)
     }
 
     private func openMainWindow() {
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
+        MainWindowGate.shared.open(using: openWindow)
     }
 }
 
@@ -130,6 +137,13 @@ struct DeviceMenuSection: View {
                 SymbolTile(systemName: "tv")
             }
 
+            if let failure = failureText {
+                Label(failure, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: 4) {
                 ControlTile(title: "Screen On", systemName: "tv", isDisabled: busy) {
                     run { try await deviceManager.screenOn(device) }
@@ -137,13 +151,15 @@ struct DeviceMenuSection: View {
                 ControlTile(title: "Screen Off", systemName: "tv.slash", isDisabled: busy) {
                     run { try await deviceManager.screenOff(device) }
                 }
-                ControlTile(title: "Wake", systemName: "sunrise", isDisabled: busy) {
+                ControlTile(title: "Power On", systemName: "sunrise", isDisabled: busy,
+                            help: "Turns the TV on, with Wake on LAN if needed") {
                     run {
                         try await deviceManager.powerOnDevice(device)
                         await deviceManager.refreshStatus(for: device)
                     }
                 }
-                ControlTile(title: "Power Off", systemName: "power", isDisabled: busy) {
+                ControlTile(title: "Power Off", systemName: "power", isDisabled: busy,
+                            help: "Turns the TV off completely. Use Power On to start it again.") {
                     run { try await deviceManager.fullPowerOff(device) }
                 }
             }
@@ -212,6 +228,12 @@ struct DeviceMenuSection: View {
         }
     }
 
+    /// The last failed command of this TV, until a command works again.
+    private var failureText: String? {
+        guard deviceManager.lastErrorDeviceID == device.id else { return nil }
+        return deviceManager.lastError
+    }
+
     private var statusColor: Color {
         guard let status = status else { return .gray }
         if status.isScreenOn { return .green }
@@ -227,6 +249,8 @@ struct DeviceMenuSection: View {
     private func run(_ action: @escaping () async throws -> Void) {
         busy = true
         Task {
+            // A failure is kept in deviceManager.lastError and shown in the
+            // card, so it is not handled here.
             try? await action()
             await MainActor.run { busy = false }
         }

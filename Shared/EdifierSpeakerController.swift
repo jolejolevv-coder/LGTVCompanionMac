@@ -80,7 +80,7 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     private static let enabledKey = "lgtvcompanion.speakers.enabled"
     private static let peripheralKey = "lgtvcompanion.speakers.peripheral"
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let advertisedService = CBUUID(string: EdifierProtocol.advertisedServiceUUID)
     private let controlService = CBUUID(string: EdifierProtocol.serviceUUID)
     private let notifyCharacteristic = CBUUID(string: EdifierProtocol.notifyCharacteristicUUID)
@@ -109,7 +109,8 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
     private var timeoutWork: DispatchWorkItem?
     private var retryNotBefore: Date?
 
-    public override init() {
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         isEnabled = defaults.bool(forKey: Self.enabledKey)
         super.init()
     }
@@ -137,6 +138,16 @@ public final class EdifierSpeakerController: NSObject, ObservableObject {
         } else {
             disconnect()
         }
+    }
+
+    /// Back to a fresh install: feature off, remembered speaker forgotten.
+    /// The settings stored in the speakers themselves are left alone.
+    public func resetSettings() {
+        setEnabled(false)
+        // setEnabled stored "false"; a fresh install has no entry at all.
+        defaults.removeObject(forKey: Self.enabledKey)
+        forgetSpeaker()
+        volumeLimit = nil
     }
 
     /// Forgets the remembered speaker, so the next connection searches again.

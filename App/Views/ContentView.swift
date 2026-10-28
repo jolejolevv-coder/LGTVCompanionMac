@@ -10,10 +10,21 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var deviceManager: DeviceManager
+    @ObservedObject private var router = MainWindowRouter.shared
     @State private var selectedDevice: WebOSDevice?
     @State private var showingAddDevice = false
     @State private var showingScanner = false
-    @State private var showingSettings = false
+    /// The TV the user asked to remove, while the confirmation is up.
+    @State private var deviceToRemove: WebOSDevice?
+
+    /// Name of the selected TV, read from the manager so a rename shows up at once.
+    private var windowTitle: String {
+        guard let id = selectedDevice?.id,
+              let device = deviceManager.devices.first(where: { $0.id == id }) else {
+            return "TVs"
+        }
+        return device.name
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -28,7 +39,7 @@ struct ContentView: View {
                 emptyStateView
             }
         }
-        .navigationTitle("LGTV Companion")
+        .navigationTitle(windowTitle)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -44,13 +55,6 @@ struct ContentView: View {
                     Label("Add TV", systemImage: "plus")
                 }
                 .help("Add a TV manually")
-
-                Button {
-                    showingSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Settings")
             }
         }
         .sheet(isPresented: $showingAddDevice) {
@@ -61,19 +65,37 @@ struct ContentView: View {
             DeviceScannerView()
                 .environmentObject(deviceManager)
         }
-        .sheet(isPresented: $showingSettings) {
-            VStack(spacing: 0) {
-                SettingsView()
-                    .environmentObject(deviceManager)
-                Divider()
-                HStack {
-                    Spacer()
-                    Button("Done") { showingSettings = false }
-                        .keyboardShortcut(.defaultAction)
-                }
-                .padding(12)
+        .confirmationDialog(
+            "Remove “\(deviceToRemove?.name ?? "TV")”?",
+            isPresented: Binding(
+                get: { deviceToRemove != nil },
+                set: { if !$0 { deviceToRemove = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: deviceToRemove
+        ) { device in
+            // Not the default button: Return must not remove a TV.
+            Button("Remove TV", role: .destructive) {
+                remove(device)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The TV will no longer be managed and its pairing key is deleted. You can add it again at any time.")
+        }
+        .onChange(of: selectedDevice) { _, device in
+            router.selectedDeviceID = device?.id
+        }
+        .onChange(of: router.pendingSheet, initial: true) { _, sheet in
+            // A menu command asked for a sheet; the window may have been
+            // created just for it.
+            guard let sheet else { return }
+            router.pendingSheet = nil
+            switch sheet {
+            case .scan: showingScanner = true
+            case .add: showingAddDevice = true
             }
         }
+        .background(WindowAccessor { MainWindowGate.shared.windowAttached($0) })
         .task {
             deviceManager.ensureMediaKeyTap()
             await deviceManager.refreshAllStatuses()
@@ -91,21 +113,14 @@ struct ContentView: View {
                                 Task { await deviceManager.refreshStatus(for: device) }
                             }
                             Divider()
-                            Button("Remove…", role: .destructive) {
-                                confirmRemove(device)
+                            Button("Remove TV…", role: .destructive) {
+                                deviceToRemove = device
                             }
                         }
                 }
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            Text("Made by Nahobino")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 8)
-        }
         .overlay {
             if deviceManager.devices.isEmpty {
                 ContentUnavailableView {
@@ -142,17 +157,9 @@ struct ContentView: View {
         )
     }
 
-    private func confirmRemove(_ device: WebOSDevice) {
-        let alert = NSAlert()
-        alert.messageText = "Remove “\(device.name)”?"
-        alert.informativeText = "The TV will no longer be managed. You can add it again at any time."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Remove")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            if selectedDevice?.id == device.id { selectedDevice = nil }
-            deviceManager.removeDevice(device)
-        }
+    private func remove(_ device: WebOSDevice) {
+        if selectedDevice?.id == device.id { selectedDevice = nil }
+        deviceManager.removeDevice(device)
     }
 }
 

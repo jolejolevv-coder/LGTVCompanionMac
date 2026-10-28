@@ -2,7 +2,7 @@
 //  DeviceScannerView.swift
 //  LGTV Companion
 //
-//  View for scanning and discovering devices on the network
+//  View for scanning and discovering TVs on the network
 //
 
 import LGTVCompanionShared
@@ -47,11 +47,11 @@ struct DeviceScannerView: View {
     
     private var headerView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Scan for Devices")
+            Text("Scan for TVs")
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Searching for LG WebOS devices on your network...")
+            Text("Searching for LG webOS TVs on your network…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -64,7 +64,7 @@ struct DeviceScannerView: View {
             ProgressView()
                 .scaleEffect(1.5)
             
-            Text("Scanning...")
+            Text("Scanning…")
                 .font(.headline)
             
             Text("This may take a few seconds")
@@ -80,7 +80,7 @@ struct DeviceScannerView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
             
-            Text("No devices found")
+            Text("No TVs found")
                 .font(.headline)
             
             Text("Make sure your TV is turned on and connected to the same network as your Mac")
