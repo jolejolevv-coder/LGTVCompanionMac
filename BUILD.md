@@ -24,20 +24,29 @@ specs/features/         Spezifikation je Feature
 ## Bauen und Installieren
 
 ```bash
-./scripts/build-release.sh
+./scripts/build-release.sh              # bauen, signieren, prüfen, DMG
+./scripts/build-release.sh --install    # zusätzlich in /Applications ersetzen und neu starten
+./scripts/build-release.sh --adhoc      # ohne lokales Zertifikat bauen (verliert die Freigaben)
 ```
 
 Das Skript baut die Release Version, legt `build/LGTV Companion.app` samt
-`Info.plist` an, signiert sie und erzeugt ein DMG. Installieren:
+`Info.plist` an, signiert sie und erzeugt ein DMG. Danach prüft es die App und
+bricht mit einer Meldung ab, wenn etwas nicht stimmt: gültige Signatur
+(`codesign --verify --deep --strict`), bei lokaler Signatur ein `certificate
+leaf` in der Designated Requirement, gültige `Info.plist`, nicht leere
+Usage Strings (Bluetooth, Systemaudio, Lokales Netzwerk).
 
-```bash
-cp -r "build/LGTV Companion.app" /Applications/
-```
+Fehlt das Zertifikat `LGTV Companion Local Signing`, bricht das Skript lokal
+ab und verweist auf `scripts/create-signing-cert.sh`. Mit `--adhoc` oder in der
+CI (Umgebungsvariable `CI`) signiert es ad hoc weiter.
 
-Läuft die App schon, vorher beenden und die alte Version ersetzen.
+`--install` beendet die laufende App (erst per AppleScript, nach 15 s per
+`pkill -x`), ersetzt `/Applications/LGTV Companion.app` und startet sie neu.
 
 Die Versionsnummer steht an genau einer Stelle: `VERSION` in
-`scripts/build-release.sh`. Die App liest sie aus ihrer `Info.plist`.
+`scripts/build-release.sh` (`CFBundleShortVersionString`). Die App liest sie aus
+ihrer `Info.plist`. `CFBundleVersion` ist die Build Nummer als UTC Zeitstempel
+`yyyymmddHHMM` und ändert sich mit jedem Lauf.
 
 ## Entwickeln
 
@@ -82,8 +91,8 @@ Die Ausgabe muss `certificate leaf = H"..."` enthalten. Steht dort `cdhash`,
 ist die App ad hoc signiert.
 
 Grenzen: Das Zertifikat gilt nur auf diesem Mac und ersetzt keine Developer ID.
-Für die Weitergabe an andere bleibt Gatekeeper im Weg. Ohne Zertifikat (CI,
-frischer Mac) signiert das Skript weiter ad hoc. Wird das Zertifikat gelöscht
+Für die Weitergabe an andere bleibt Gatekeeper im Weg. Ohne Zertifikat
+baut das Skript nur mit `--adhoc` oder in der CI (dort ad hoc). Wird das Zertifikat gelöscht
 und neu erzeugt, müssen die Freigaben einmal neu gesetzt werden, und macOS
 fragt beim Zugriff auf den Pairing Key im Schlüsselbund nach.
 
