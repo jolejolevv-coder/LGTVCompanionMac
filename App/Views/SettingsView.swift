@@ -15,6 +15,10 @@ struct SettingsView: View {
     @State private var userIdleEnabled: Bool
     @State private var userIdleTimeout: Double
     @State private var launchAtLogin = false
+    /// Why the last launch-at-login change failed, shown under the toggle.
+    @State private var launchAtLoginError: String?
+    /// The login item is registered but macOS waits for the user's approval.
+    @State private var launchAtLoginNeedsApproval = false
     @State private var mediaKeysEnabled = false
 
     /// Apps currently holding a display-sleep assertion. Refreshed live while
@@ -70,7 +74,22 @@ struct SettingsView: View {
                     .onChange(of: launchAtLogin) { _, newValue in
                         updateLaunchAtLogin(newValue)
                     }
-                
+
+                if let launchAtLoginError {
+                    Text(launchAtLoginError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                if launchAtLoginNeedsApproval {
+                    Text("macOS needs your approval before the app can start at login.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Open Login Items Settings") {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                }
+
                 Toggle("Enable power event monitoring", isOn: .constant(deviceManager.isMonitoringPowerEvents))
                     .disabled(true)
                     .help("Monitoring is automatically enabled when devices are set to auto-manage")
@@ -268,7 +287,7 @@ struct SettingsView: View {
     private func loadSettings() {
         userIdleEnabled = deviceManager.userIdleEnabled
         userIdleTimeout = deviceManager.userIdleTimeout
-        launchAtLogin = LaunchAtLogin.isEnabled
+        refreshLaunchAtLogin()
         mediaKeysEnabled = deviceManager.mediaKeysEnabled
         displaySleepApps = deviceManager.currentDisplaySleepApps()
     }
@@ -301,7 +320,23 @@ struct SettingsView: View {
     }
     
     private func updateLaunchAtLogin(_ enabled: Bool) {
-        LaunchAtLogin.isEnabled = enabled
+        // Also fires when refreshLaunchAtLogin() moves the toggle (initial
+        // load, rollback). Nothing to do when it already matches the system.
+        guard enabled != LaunchAtLogin.isRegistered else { return }
+
+        launchAtLoginError = nil
+        do {
+            try LaunchAtLogin.setRegistered(enabled)
+        } catch {
+            launchAtLoginError = "Could not change launch at login: \(error.localizedDescription)"
+        }
+        refreshLaunchAtLogin()
+    }
+
+    /// Takes the toggle from the real status, so a failed change rolls back.
+    private func refreshLaunchAtLogin() {
+        launchAtLogin = LaunchAtLogin.isRegistered
+        launchAtLoginNeedsApproval = LaunchAtLogin.status == .requiresApproval
     }
     
     private func resetSettings() {
@@ -352,21 +387,22 @@ struct SettingsView: View {
 struct LaunchAtLogin {
     // Modern SMAppService API (macOS 13+). Registers the app itself as a
     // login item. NOTE: only works when running from a real .app bundle —
-    // when launched as a bare SwiftPM executable this is a no-op.
-    static var isEnabled: Bool {
-        get {
-            SMAppService.mainApp.status == .enabled
-        }
-        set {
-            do {
-                if newValue {
-                    try SMAppService.mainApp.register()
-                } else {
-                    try SMAppService.mainApp.unregister()
-                }
-            } catch {
-                print("Launch at login change failed: \(error)")
-            }
+    // when launched as a bare SwiftPM executable, register() throws.
+    static var status: SMAppService.Status {
+        SMAppService.mainApp.status
+    }
+
+    /// Registered, or registered and waiting for the user's approval in
+    /// System Settings. Both count as "on" for the toggle.
+    static var isRegistered: Bool {
+        status == .enabled || status == .requiresApproval
+    }
+
+    static func setRegistered(_ registered: Bool) throws {
+        if registered {
+            try SMAppService.mainApp.register()
+        } else {
+            try SMAppService.mainApp.unregister()
         }
     }
 }
