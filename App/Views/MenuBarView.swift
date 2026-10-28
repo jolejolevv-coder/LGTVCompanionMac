@@ -126,7 +126,8 @@ struct DeviceMenuSection: View {
 
     private var softwareVolumePercent: Binding<Double> {
         Binding(
-            get: { (deviceManager.softwareVolumeLevel * 100).rounded() },
+            // Not rounded, so keyboard steps stay on the 16 step grid.
+            get: { deviceManager.softwareVolumeLevel * 100 },
             set: { deviceManager.setSoftwareVolume(level: $0 / 100) }
         )
     }
@@ -218,6 +219,7 @@ struct DeviceMenuSection: View {
             VolumeRow(
                 value: softwareVolumePercent,
                 range: Self.tvVolumeRange,
+                keyboardStep: VolumeKeyboardStep.software,
                 isMuted: deviceManager.softwareVolumeMuted,
                 accessibilityLabel: "Mac volume",
                 onToggleMute: { deviceManager.toggleSoftwareMute() }
