@@ -146,21 +146,25 @@ struct DeviceMenuSection: View {
             }
 
             HStack(spacing: 4) {
-                ControlTile(title: "Screen On", systemName: "tv", isDisabled: busy) {
+                ControlTile(title: "Screen On", systemName: "tv", isDisabled: busy,
+                            accessibilityID: AccessibilityID.Menu.tvScreenOn) {
                     run { try await deviceManager.screenOn(device) }
                 }
-                ControlTile(title: "Screen Off", systemName: "tv.slash", isDisabled: busy) {
+                ControlTile(title: "Screen Off", systemName: "tv.slash", isDisabled: busy,
+                            accessibilityID: AccessibilityID.Menu.tvScreenOff) {
                     run { try await deviceManager.screenOff(device) }
                 }
                 ControlTile(title: "Power On", systemName: "sunrise", isDisabled: busy,
-                            help: "Turns the TV on, with Wake on LAN if needed") {
+                            help: "Turns the TV on, with Wake on LAN if needed",
+                            accessibilityID: AccessibilityID.Menu.tvPowerOn) {
                     run {
                         try await deviceManager.powerOnDevice(device)
                         await deviceManager.refreshStatus(for: device)
                     }
                 }
                 ControlTile(title: "Power Off", systemName: "power", isDisabled: busy,
-                            help: "Turns the TV off completely. Use Power On to start it again.") {
+                            help: "Turns the TV off completely. Use Power On to start it again.",
+                            accessibilityID: AccessibilityID.Menu.tvPowerOff) {
                     run { try await deviceManager.fullPowerOff(device) }
                 }
             }
@@ -173,10 +177,12 @@ struct DeviceMenuSection: View {
                 tvVolumeRow
             }
 
-            CapsuleGroup(caption: "Input", spokenName: "TV input") {
+            CapsuleGroup(caption: "Input", spokenName: "TV input",
+                         accessibilityID: AccessibilityID.Menu.tvInput) {
                 HStack(spacing: 6) {
                     ForEach(Self.hdmiInputs, id: \.self) { number in
-                        CapsuleButton(title: "HDMI \(number)", help: "Switch the TV to HDMI \(number)") {
+                        CapsuleButton(title: "HDMI \(number)", help: "Switch the TV to HDMI \(number)",
+                                      accessibilityID: AccessibilityID.Menu.tvInput(hdmi: number)) {
                             run { try await deviceManager.switchInput("HDMI_\(number)", for: device) }
                         }
                     }
@@ -199,6 +205,7 @@ struct DeviceMenuSection: View {
             isMuted: status?.muted ?? false,
             isEnabled: status?.isReachable ?? false,
             accessibilityLabel: "TV volume",
+            accessibilityID: AccessibilityID.Menu.volumeTVSlider,
             onToggleMute: {
                 run {
                     try await deviceManager.setMute(!(status?.muted ?? false), for: device)
@@ -221,6 +228,7 @@ struct DeviceMenuSection: View {
                 keyboardStep: VolumeKeyboardStep.software,
                 isMuted: deviceManager.softwareVolumeMuted,
                 accessibilityLabel: "Mac volume",
+                accessibilityID: AccessibilityID.Menu.volumeMacSlider,
                 onToggleMute: { deviceManager.toggleSoftwareMute() }
             )
             Text("Mac volume. The TV's sound output has a fixed level.")
@@ -285,6 +293,7 @@ struct SpeakerMenuSection: View {
                 isMuted: speakers.isMuted,
                 isEnabled: speakers.volume != nil,
                 accessibilityLabel: "Speaker volume",
+                accessibilityID: AccessibilityID.Menu.volumeSpeakerSlider,
                 onToggleMute: { speakers.toggleMute() },
                 onCommit: {
                     speakers.setVolume(Int(sliderVolume))
@@ -293,34 +302,39 @@ struct SpeakerMenuSection: View {
                 }
             )
 
-            CapsuleGroup(caption: "Subwoofer") {
+            CapsuleGroup(caption: "Subwoofer", accessibilityID: AccessibilityID.Menu.speakerSubwoofer) {
                 CapsulePicker(
                     options: EdifierSubOutLevel.allCases,
                     selection: speakers.subOut,
                     label: { $0.label },
                     isEnabled: speakers.subOut != nil,
+                    accessibilityID: AccessibilityID.Menu.speakerSubwoofer,
                     onSelect: { speakers.setSubOut($0) }
                 )
             }
 
-            CapsuleGroup(caption: "Sound") {
+            CapsuleGroup(caption: "Sound", accessibilityID: AccessibilityID.Menu.speakerSound) {
                 CapsulePicker(
                     options: SpeakerSoundLibrary.menuOrder,
                     selection: automation.currentSound,
                     label: { SpeakerSoundLibrary.name(of: $0) },
                     isEnabled: speakers.eqPreset != nil,
                     columns: Self.soundColumns,
+                    accessibilityID: AccessibilityID.Menu.speakerSound,
+                    optionKey: { $0.id },
                     onSelect: { automation.selectSound($0) }
                 )
             }
 
-            CapsuleGroup(caption: "Input", spokenName: "Speaker input") {
+            CapsuleGroup(caption: "Input", spokenName: "Speaker input",
+                         accessibilityID: AccessibilityID.Menu.speakerInput) {
                 CapsulePicker(
                     options: EdifierInput.allCases,
                     selection: speakers.input,
                     label: { $0.shortLabel },
                     isEnabled: speakers.input != nil,
                     help: { $0.shortLabel == $0.label ? nil : $0.label },
+                    accessibilityID: AccessibilityID.Menu.speakerInput,
                     onSelect: { speakers.setInput($0) }
                 )
             }
@@ -345,6 +359,7 @@ struct SpeakerMenuSection: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .labelsHidden()
+                .accessibilityIdentifier(AccessibilityID.Menu.speakerNightMode)
             }
 
             if speakers.state == .unavailable {
@@ -432,6 +447,7 @@ struct DisplayScalingSection: View {
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
+                        .accessibilityIdentifier(AccessibilityID.Menu.displayMode)
                     }
                 }
             }

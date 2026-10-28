@@ -136,6 +136,7 @@ struct PillSlider: View {
     var keyboardStep: Double = VolumeKeyboardStep.device
     var isEnabled = true
     let accessibilityLabel: String
+    var accessibilityID: String?
     var onCommit: () -> Void = {}
 
     /// Quiet time after the last keyboard or VoiceOver step before `onCommit`.
@@ -214,6 +215,7 @@ struct PillSlider: View {
         .accessibilityElement()
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityPercent)
+        .accessibilityIdentifier(accessibilityID ?? "")
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: adjust(by: keyboardStep)
@@ -253,6 +255,7 @@ struct VolumeRow: View {
     let isMuted: Bool
     var isEnabled = true
     let accessibilityLabel: String
+    var accessibilityID: String?
     let onToggleMute: () -> Void
     var onCommit: () -> Void = {}
 
@@ -269,7 +272,8 @@ struct VolumeRow: View {
             .help(isMuted ? "Unmute" : "Mute")
 
             PillSlider(value: $value, range: range, keyboardStep: keyboardStep, isEnabled: isEnabled,
-                       accessibilityLabel: accessibilityLabel, onCommit: onCommit)
+                       accessibilityLabel: accessibilityLabel, accessibilityID: accessibilityID,
+                       onCommit: onCommit)
 
             // The slider speaks its own value.
             Text("\(Int(value.rounded()))")
@@ -298,6 +302,7 @@ struct ControlTile: View {
     var isDisabled = false
     /// Tooltip. Falls back to the title when the title says enough.
     var help: String?
+    var accessibilityID: String?
     let action: () -> Void
 
     var body: some View {
@@ -319,6 +324,7 @@ struct ControlTile: View {
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.5 : 1)
         .help(help ?? title)
+        .accessibilityIdentifier(accessibilityID ?? "")
     }
 }
 
@@ -327,6 +333,7 @@ struct CapsuleButton: View {
     let title: String
     /// Tooltip and spoken hint, for a title that is ambiguous on its own.
     var help: String?
+    var accessibilityID: String?
     let action: () -> Void
 
     var body: some View {
@@ -343,6 +350,7 @@ struct CapsuleButton: View {
         }
         .buttonStyle(PressableStyle())
         .help(help ?? "")
+        .accessibilityIdentifier(accessibilityID ?? "")
     }
 }
 
@@ -353,6 +361,7 @@ struct CapsuleGroup<Content: View>: View {
     /// What VoiceOver calls the group, when the caption alone is not unique
     /// in the panel (both the TV and the speakers have an "Input").
     var spokenName: String?
+    var accessibilityID: String?
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -363,6 +372,7 @@ struct CapsuleGroup<Content: View>: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(spokenName ?? caption)
+        .accessibilityIdentifier(accessibilityID ?? "")
     }
 }
 
@@ -378,6 +388,9 @@ struct CapsulePicker<Option: Hashable>: View {
     var columns: Int?
     /// Tooltip and spoken name for an option whose label is short or cryptic.
     var help: (Option) -> String? = { _ in nil }
+    /// Identifier of the group; each capsule gets `<identifier>.<optionKey>`.
+    var accessibilityID: String?
+    var optionKey: (Option) -> String = { String(describing: $0) }
     let onSelect: (Option) -> Void
 
     private static var spacing: CGFloat { 6 }
@@ -418,6 +431,7 @@ struct CapsulePicker<Option: Hashable>: View {
             .buttonStyle(PressableStyle())
             .help(help(option) ?? "")
             .accessibilityLabel(help(option) ?? label(option))
+            .accessibilityIdentifier(accessibilityID.map { "\($0).\(optionKey(option))" } ?? "")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }
