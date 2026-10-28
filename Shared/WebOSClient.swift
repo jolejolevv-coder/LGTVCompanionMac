@@ -234,13 +234,20 @@ public class WebOSClient: ObservableObject, TVTransport {
                     if resumed.tryClaim() { continuation.resume() }
                 case .failed(let error):
                     if self.connection === newConnection {
-                        DispatchQueue.main.async { self.isConnected = false }
+                        DispatchQueue.main.async {
+                            self.isConnected = false
+                            // The registration died with the socket.
+                            self.isPaired = false
+                        }
                         self.failAllPending(with: .networkError(error))
                     }
                     if resumed.tryClaim() { continuation.resume(throwing: WebOSError.networkError(error)) }
                 case .cancelled:
                     if self.connection === newConnection {
-                        DispatchQueue.main.async { self.isConnected = false }
+                        DispatchQueue.main.async {
+                            self.isConnected = false
+                            self.isPaired = false
+                        }
                         self.failAllPending(with: .notConnected)
                     }
                     if resumed.tryClaim() { continuation.resume(throwing: WebOSError.notConnected) }
