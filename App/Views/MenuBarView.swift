@@ -65,14 +65,12 @@ struct MenuBarView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .help("Refresh")
+            .help("Check the TV and speaker status")
 
-            Button {
+            Button("Quit") {
                 NSApp.terminate(nil)
-            } label: {
-                Image(systemName: "power")
             }
-            .help("Quit")
+            .help("Quit LGTV Companion (⌘Q)")
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
@@ -137,13 +135,15 @@ struct DeviceMenuSection: View {
                 ControlTile(title: "Screen Off", systemName: "tv.slash", isDisabled: busy) {
                     run { try await deviceManager.screenOff(device) }
                 }
-                ControlTile(title: "Wake", systemName: "sunrise", isDisabled: busy) {
+                ControlTile(title: "Power On", systemName: "sunrise", isDisabled: busy,
+                            help: "Turns the TV on, with Wake on LAN if needed") {
                     run {
                         try await deviceManager.powerOnDevice(device)
                         await deviceManager.refreshStatus(for: device)
                     }
                 }
-                ControlTile(title: "Power Off", systemName: "power", isDisabled: busy) {
+                ControlTile(title: "Power Off", systemName: "power", isDisabled: busy,
+                            help: "Turns the TV off completely. Use Power On to start it again.") {
                     run { try await deviceManager.fullPowerOff(device) }
                 }
             }

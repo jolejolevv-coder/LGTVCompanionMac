@@ -15,6 +15,15 @@ struct ContentView: View {
     @State private var showingScanner = false
     @State private var showingSettings = false
 
+    /// Name of the selected TV, read from the manager so a rename shows up at once.
+    private var windowTitle: String {
+        guard let id = selectedDevice?.id,
+              let device = deviceManager.devices.first(where: { $0.id == id }) else {
+            return "TVs"
+        }
+        return device.name
+    }
+
     var body: some View {
         NavigationSplitView {
             deviceListSidebar
@@ -28,7 +37,7 @@ struct ContentView: View {
                 emptyStateView
             }
         }
-        .navigationTitle("LGTV Companion")
+        .navigationTitle(windowTitle)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -99,13 +108,6 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            Text("Made by Nahobino")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 8)
-        }
         .overlay {
             if deviceManager.devices.isEmpty {
                 ContentUnavailableView {

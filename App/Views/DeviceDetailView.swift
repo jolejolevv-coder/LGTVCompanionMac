@@ -22,7 +22,7 @@ struct DeviceDetailView: View {
             Divider()
 
             Form {
-                Section("Device") {
+                Section("TV") {
                     deviceInfoSection
                 }
 
@@ -136,7 +136,7 @@ struct DeviceDetailView: View {
 
             Toggle("Enabled", isOn: $device.enabled)
                 .tint(.green)
-                .help("Enable or disable this device")
+                .help("Enable or disable this TV")
 
             LabeledContent("Pairing") {
                 if device.pairingKey != nil {
@@ -236,7 +236,7 @@ struct DeviceDetailView: View {
             }
 
             LabeledContent("Pairing") {
-                Button(isPairing ? "Pairing…" : (device.pairingKey != nil ? "Pair Again" : "Pair Device")) {
+                Button(isPairing ? "Pairing…" : (device.pairingKey != nil ? "Pair Again" : "Pair TV")) {
                     pairDevice()
                 }
                 .disabled(isPairing || !device.enabled)

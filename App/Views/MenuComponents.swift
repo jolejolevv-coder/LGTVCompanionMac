@@ -221,6 +221,8 @@ struct ControlTile: View {
     let title: String
     let systemName: String
     var isDisabled = false
+    /// Tooltip. Falls back to the title when the title says enough.
+    var help: String?
     let action: () -> Void
 
     var body: some View {
@@ -241,7 +243,7 @@ struct ControlTile: View {
         .buttonStyle(PressableStyle())
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.5 : 1)
-        .help(title)
+        .help(help ?? title)
     }
 }
 
