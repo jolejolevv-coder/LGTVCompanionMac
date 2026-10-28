@@ -43,7 +43,9 @@ Event Tap der Medientasten, CoreBluetooth, WebOSClient Verbindung, Audio Tap.
    `applicationDidFinishLaunching`, übrige Punkte der Liste je ein Commit.
 3. Erledigt 28.10.: Phase 2 (merge auf main, per --install installiert).
    Erledigt 28.10.: Phase 3 (installiert, startet als UIElement ohne Fenster).
-   Erledigt 28.10.: Phase 4 (installiert). Jetzt Phase 5 Swift 6 laut Spec, alles in dieser Sitzung (Nutzer:
+   Erledigt 28.10.: Phase 4 und Phase 5 (merge a1128a9, installiert, kein
+   Absturz beim Start). BAMA Plan komplett. Danach: Klicktests und Nachttest
+   durch den Nutzer, Release 1.3.0 nur auf Wunsch. Alter Text: Phase 5 Swift 6 laut Spec, alles in dieser Sitzung (Nutzer:
    "mach dann hier"). Phase 3 zusätzlich: Pair Again in DeviceDetailView
    über DeviceManager und TVSession führen.
 4. Von Hand offen nach Phase 1: Lautstärketasten, Sleep und Wake nach
