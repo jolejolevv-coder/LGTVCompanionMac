@@ -8,7 +8,7 @@
 import Foundation
 import Network
 
-public struct DiscoveredDevice {
+public struct DiscoveredDevice: Sendable {
     public let ipAddress: String
     public let friendlyName: String
     public let modelName: String
@@ -30,7 +30,7 @@ public struct DiscoveredDevice {
 }
 
 /// The parts of an SSDP answer the scan uses.
-struct SSDPResponse: Equatable {
+struct SSDPResponse: Equatable, Sendable {
     /// Device description URL (LOCATION header), trimmed.
     var location: String?
     /// Unique service name (USN header).
@@ -77,6 +77,11 @@ struct ScanAddressFilter {
     }
 }
 
+/// Main actor. The multicast group is started on the main queue, so its
+/// handlers arrive on the main thread. The two callbacks that do not (the
+/// description download on URLSession's queue, the port probe on `probeQueue`)
+/// are `@Sendable` and hop back with `MainThread`.
+@MainActor
 public class DeviceDiscovery: ObservableObject {
     @Published public var discoveredDevices: [DiscoveredDevice] = []
     @Published public var isScanning = false
@@ -104,9 +109,9 @@ public class DeviceDiscovery: ObservableObject {
     /// accept a connection here are real, pairable TVs — SSDP otherwise also
     /// surfaces stale leases and other "LG" UPnP responders that can't be
     /// controlled, which only confuse the user with un-pairable entries.
-    private static let controlPort: UInt16 = 3001
-    private static let probeQueue = DispatchQueue(label: "com.lgtvcompanion.discovery.probe")
-    private static let probeTimeout: TimeInterval = 3
+    private nonisolated static let controlPort: UInt16 = 3001
+    private nonisolated static let probeQueue = DispatchQueue(label: "com.lgtvcompanion.discovery.probe")
+    private nonisolated static let probeTimeout: TimeInterval = 3
 
     /// Start scanning for LG WebOS devices
     public func startScan(timeout: TimeInterval = 8.0) {
@@ -130,18 +135,22 @@ public class DeviceDiscovery: ObservableObject {
             let group = NWConnectionGroup(with: multicast, using: .udp)
             self.group = group
 
+            // Both handlers run on the queue the group starts on: main.
             group.setReceiveHandler(maximumMessageSize: 16384, rejectOversizedMessages: true) { [weak self] message, data, _ in
-                guard let self = self, let data = data, !data.isEmpty else { return }
-                self.parseSSDPResponse(data, from: message.remoteEndpoint)
+                guard let data = data, !data.isEmpty else { return }
+                let endpoint = message.remoteEndpoint
+                MainActor.assumeIsolated {
+                    self?.parseSSDPResponse(data, from: endpoint)
+                }
             }
 
             group.stateUpdateHandler = { [weak self] state in
                 switch state {
                 case .ready:
-                    self?.sendSSDPSearch()
+                    MainActor.assumeIsolated { self?.sendSSDPSearch() }
                 case .failed(let error):
                     Log.tv.error("SSDP group failed: \(error.localizedDescription, privacy: .public)")
-                    DispatchQueue.main.async { self?.stopScan() }
+                    MainThread.async { [weak self] in self?.stopScan() }
                 default:
                     break
                 }
@@ -157,7 +166,8 @@ public class DeviceDiscovery: ObservableObject {
         // Stop scanning after timeout
         scanTimer?.invalidate()
         scanTimer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
-            self?.stopScan()
+            // Scheduled on the main run loop, so this runs on the main thread.
+            MainActor.assumeIsolated { self?.stopScan() }
         }
     }
 
@@ -193,7 +203,7 @@ public class DeviceDiscovery: ObservableObject {
                 }
             }
             // Repeat after 1s for reliability
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            MainThread.asyncAfter(seconds: 1.0) { [weak self] in
                 self?.group?.send(content: data) { _ in }
             }
         }
@@ -246,29 +256,31 @@ public class DeviceDiscovery: ObservableObject {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
-            guard let self = self else { return }
-
-            guard let data = data, error == nil else {
+        // The completion runs on URLSession's queue: parse there, then hop
+        // to the main actor with the finished value.
+        URLSession.shared.dataTask(with: request) { @Sendable [weak self] data, _, error in
+            let found: DiscoveredDevice
+            if let data = data, error == nil {
+                let parser = DeviceDescriptionParser()
+                parser.parse(data)
+                found = DiscoveredDevice(
+                    ipAddress: ipAddress,
+                    friendlyName: parser.friendlyName,
+                    modelName: parser.modelName,
+                    macAddress: nil // MAC address typically not in SSDP
+                )
+            } else {
                 // Description fetch failed — still record the device
-                self.considerDevice(DiscoveredDevice(
+                found = DiscoveredDevice(
                     ipAddress: ipAddress,
                     friendlyName: "",
                     modelName: "LG WebOS TV",
                     macAddress: nil
-                ), generation: generation)
-                return
+                )
             }
-
-            let parser = DeviceDescriptionParser()
-            parser.parse(data)
-
-            self.considerDevice(DiscoveredDevice(
-                ipAddress: ipAddress,
-                friendlyName: parser.friendlyName,
-                modelName: parser.modelName,
-                macAddress: nil // MAC address typically not in SSDP
-            ), generation: generation)
+            MainThread.async { [weak self] in
+                self?.considerDevice(found, generation: generation)
+            }
         }.resume()
     }
 
@@ -277,7 +289,8 @@ public class DeviceDiscovery: ObservableObject {
     /// UPnP responders that answer SSDP but can't be paired/controlled.
     private func considerDevice(_ device: DiscoveredDevice, generation: Int) {
         guard !device.ipAddress.isEmpty else { return }
-        probeControlPort(device.ipAddress) { [weak self] reachable in
+        // The completion runs on `probeQueue`, not on the main thread.
+        Self.probeControlPort(device.ipAddress) { @Sendable [weak self] reachable in
             guard reachable else { return }
             // Ask the TV for its Wake-on-LAN MAC, which spares the user from
             // copying it out of the TV's network settings.
@@ -289,7 +302,7 @@ public class DeviceDiscovery: ObservableObject {
                     modelName: device.modelName,
                     macAddress: device.macAddress ?? mac
                 )
-                DispatchQueue.main.async {
+                MainThread.async { [weak self] in
                     self?.addDeviceIfNew(resolved, generation: generation)
                 }
             }
@@ -298,13 +311,14 @@ public class DeviceDiscovery: ObservableObject {
 
     /// TCP-connect to the control port with a short timeout. Plain TCP (no TLS)
     /// is enough to tell "something is listening" from "connection refused".
-    private func probeControlPort(_ host: String, completion: @escaping (Bool) -> Void) {
+    /// Not main actor: it runs on `probeQueue` and calls `completion` there.
+    private nonisolated static func probeControlPort(_ host: String, completion: @escaping @Sendable (Bool) -> Void) {
         guard let port = NWEndpoint.Port(rawValue: Self.controlPort) else {
             completion(false); return
         }
         let conn = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
         let once = ResumeGuard()
-        func finish(_ ok: Bool) {
+        @Sendable func finish(_ ok: Bool) {
             guard once.tryClaim() else { return }
             conn.cancel()
             completion(ok)

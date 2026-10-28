@@ -12,6 +12,7 @@
 
 import Foundation
 
+@MainActor
 public final class SpeakerAutomation: ObservableObject {
     /// The user's own curve for the speakers' Custom slot.
     @Published public private(set) var myEQ: [Double]
@@ -127,7 +128,8 @@ public final class SpeakerAutomation: ObservableObject {
         }
 
         let timer = Timer(timeInterval: Self.scheduleCheckSeconds, repeats: true) { [weak self] _ in
-            self?.checkSchedule()
+            // Added to the main run loop below, so this runs on the main thread.
+            MainActor.assumeIsolated { self?.checkSchedule() }
         }
         timer.tolerance = TimerTolerance.tolerance(for: Self.scheduleCheckSeconds)
         RunLoop.main.add(timer, forMode: .common)
@@ -135,7 +137,7 @@ public final class SpeakerAutomation: ObservableObject {
         checkSchedule()
     }
 
-    deinit {
+    isolated deinit {
         scheduleTimer?.invalidate()
     }
 
@@ -330,7 +332,7 @@ public final class SpeakerAutomation: ObservableObject {
         // The schedule timer may have slept through the end of the night.
         checkSchedule()
         guard speakers.isEnabled, wakeInputEnabled else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.wakeDelaySeconds) { [weak self] in
+        MainThread.asyncAfter(seconds: Self.wakeDelaySeconds) { [weak self] in
             guard let self = self else { return }
             self.wakeInputPending = true
             self.speakers.refresh()

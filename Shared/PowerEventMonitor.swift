@@ -10,7 +10,7 @@ import AppKit
 import IOKit
 import IOKit.pwr_mgt
 
-enum PowerEvent {
+enum PowerEvent: Sendable {
     case systemWillSleep
     case systemDidWake
     case systemWillShutdown
@@ -28,7 +28,11 @@ private let kIOMessageSystemHasPoweredOn: UInt32 = 0xe0000300
 private let kIOMessageSystemWillPowerOff: UInt32 = 0xe0000250
 private let kIOMessageSystemWillRestart: UInt32  = 0xe0000310
 
-class PowerEventMonitor {
+/// Main actor. The IOKit callback arrives through a run loop source on the
+/// main run loop, so it runs on the main thread; it enters the actor with
+/// `assumeIsolated`.
+@MainActor
+final class PowerEventMonitor {
     private var notifyPortRef: IONotificationPortRef?
     private var notifierObject: io_object_t = 0
     private var rootPort: io_connect_t = 0
@@ -43,13 +47,13 @@ class PowerEventMonitor {
     /// completion is called (or `maxSleepDelay` elapses) — this gives the
     /// TV power-off command time to actually reach the TV.
     /// For all other events the completion is a no-op; calling it is harmless.
-    var onPowerEvent: ((PowerEvent, @escaping () -> Void) -> Void)?
+    var onPowerEvent: (@MainActor (PowerEvent, @escaping @Sendable () -> Void) -> Void)?
 
     init() {
         setupPowerEventHandling()
     }
 
-    deinit {
+    isolated deinit {
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -76,7 +80,11 @@ class PowerEventMonitor {
             { (refCon, service, messageType, messageArgument) in
                 guard let refCon = refCon else { return }
                 let monitor = Unmanaged<PowerEventMonitor>.fromOpaque(refCon).takeUnretainedValue()
-                monitor.handlePowerEvent(messageType: messageType, messageArgument: messageArgument)
+                // The run loop source sits on the main run loop (see below),
+                // so this C callback runs on the main thread.
+                MainActor.assumeIsolated {
+                    monitor.handlePowerEvent(messageType: messageType, messageArgument: messageArgument)
+                }
             },
             &notifierObject
         )
@@ -99,14 +107,15 @@ class PowerEventMonitor {
             forName: NSWorkspace.screensDidSleepNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.onPowerEvent?(.displayWillSleep, {})
+            // queue: .main, so this runs on the main thread.
+            MainActor.assumeIsolated { self?.onPowerEvent?(.displayWillSleep, {}) }
         })
 
         workspaceObservers.append(center.addObserver(
             forName: NSWorkspace.screensDidWakeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.onPowerEvent?(.displayDidWake, {})
+            MainActor.assumeIsolated { self?.onPowerEvent?(.displayDidWake, {}) }
         })
     }
 
@@ -126,7 +135,7 @@ class PowerEventMonitor {
             let port = rootPort
             let argument = Int(bitPattern: messageArgument)
             let allowed = ResumeGuard()
-            let allowOnce = {
+            let allowOnce: @Sendable () -> Void = {
                 DispatchQueue.main.async {
                     guard allowed.tryClaim() else { return }
                     if port != 0 {
@@ -163,7 +172,8 @@ class PowerEventMonitor {
 
 // MARK: - User Idle Monitor
 
-class UserIdleMonitor {
+@MainActor
+final class UserIdleMonitor {
     private var timer: Timer?
     private var idleThreshold: TimeInterval
     private var isIdle = false
@@ -173,13 +183,13 @@ class UserIdleMonitor {
     /// user is never reported as idle, even with no keyboard/mouse input.
     var allowedAssertionBundleIDs: Set<String> = []
 
-    var onIdleStateChanged: ((Bool) -> Void)?
+    var onIdleStateChanged: (@MainActor (Bool) -> Void)?
 
     init(idleThreshold: TimeInterval = 300) { // 5 minutes default
         self.idleThreshold = idleThreshold
     }
 
-    deinit {
+    isolated deinit {
         timer?.invalidate()
     }
 
@@ -201,7 +211,8 @@ class UserIdleMonitor {
     private func scheduleNextCheck(in interval: TimeInterval) {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.checkIdleState()
+            // Scheduled on the main run loop, so this runs on the main thread.
+            MainActor.assumeIsolated { self?.checkIdleState() }
         }
         timer?.tolerance = TimerTolerance.tolerance(for: interval)
         RunLoop.main.add(timer!, forMode: .common)
@@ -276,8 +287,9 @@ class UserIdleMonitor {
 
 // MARK: - Display Configuration Monitor
 
-class DisplayConfigurationMonitor {
-    var onDisplayConfigurationChanged: (() -> Void)?
+@MainActor
+final class DisplayConfigurationMonitor {
+    var onDisplayConfigurationChanged: (@MainActor () -> Void)?
 
     private var registered = false
 
@@ -321,7 +333,8 @@ private func displayReconfigurationCallback(
     let monitor = Unmanaged<DisplayConfigurationMonitor>.fromOpaque(userInfo).takeUnretainedValue()
 
     if flags.contains(.addFlag) || flags.contains(.removeFlag) {
-        DispatchQueue.main.async {
+        // Hop explicitly: nothing promises which thread Core Graphics uses.
+        MainThread.async {
             monitor.onDisplayConfigurationChanged?()
         }
     }

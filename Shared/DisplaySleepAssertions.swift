@@ -15,7 +15,7 @@ import IOKit.pwr_mgt
 
 /// An app that is currently holding a display-sleep power assertion, i.e.
 /// actively keeping the screen on (usually while playing video).
-public struct AssertingApp: Identifiable, Hashable {
+public struct AssertingApp: Identifiable, Hashable, Sendable {
     public let bundleID: String
     public let name: String
     public var id: String { bundleID }

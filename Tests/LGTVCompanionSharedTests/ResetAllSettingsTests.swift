@@ -11,6 +11,7 @@ private final class MemoryKeyStore: PairingKeyStoring {
 
 /// "Reset All Settings" must leave nothing of the app behind: no device, no
 /// pairing key, no stored option, no speaker setting.
+@MainActor
 final class ResetAllSettingsTests: XCTestCase {
 
     private static let appKeyPrefix = "lgtvcompanion."

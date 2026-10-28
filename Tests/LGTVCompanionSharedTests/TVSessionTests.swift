@@ -2,8 +2,9 @@ import XCTest
 @testable import LGTVCompanionShared
 
 /// Stand-in for a TV connection. connect() and register() take a moment, so
-/// concurrent callers really overlap.
-private final class FakeTransport: TVTransport {
+/// concurrent callers really overlap. Every access to the mutable fields goes
+/// through `lock`, which is what makes the unchecked Sendable safe.
+private final class FakeTransport: TVTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var state = TVLinkState(isConnected: false, isPaired: false)
     private var connectCalls = 0

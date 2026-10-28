@@ -4,6 +4,7 @@ import XCTest
 /// The speaker controller stays switched off in these tests (its "enabled"
 /// flag lives in the real defaults and is not set there by the tests), so no
 /// Bluetooth is touched. What is tested is the settings logic around it.
+@MainActor
 final class SpeakerAutomationTests: XCTestCase {
 
     private var suiteName = ""
@@ -109,6 +110,7 @@ final class SpeakerAutomationTests: XCTestCase {
 }
 
 /// Night schedule 22:00 until 08:00, checked at chosen times of day.
+@MainActor
 final class NightScheduleBehaviorTests: XCTestCase {
 
     private var suiteName = ""

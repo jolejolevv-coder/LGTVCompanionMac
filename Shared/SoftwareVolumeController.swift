@@ -17,9 +17,14 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 
+/// Main actor, except for the render path. The IOProc runs on `ioQueue` (a
+/// real time thread) and touches only the two gain pointers and the samples:
+/// `render` is `nonisolated`, and the pointers are handed to it as
+/// `nonisolated(unsafe)` copies, see `start()`.
+@MainActor
 public final class SoftwareVolumeController {
     /// Called on the main thread when the Mac's default output device changed.
-    public var onOutputDeviceChanged: (() -> Void)?
+    public var onOutputDeviceChanged: (@MainActor () -> Void)?
 
     public private(set) var isRunning = false
 
@@ -48,7 +53,7 @@ public final class SoftwareVolumeController {
     private let currentGain: UnsafeMutablePointer<Float32>
 
     private var outputListener: AudioObjectPropertyListenerBlock?
-    private static var defaultOutputAddress = AudioObjectPropertyAddress(
+    private static let defaultOutputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMain
@@ -62,20 +67,26 @@ public final class SoftwareVolumeController {
 
         outputIsDigitalDisplay = Self.defaultOutputIsDigitalDisplay()
 
-        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            self?.refreshOutputDevice()
-            self?.onOutputDeviceChanged?()
+        // Registered on the main queue below, so the block runs on the main
+        // thread and may enter the main actor.
+        let listener: AudioObjectPropertyListenerBlock = { @Sendable [weak self] _, _ in
+            MainActor.assumeIsolated {
+                self?.refreshOutputDevice()
+                self?.onOutputDeviceChanged?()
+            }
         }
         outputListener = listener
+        var address = Self.defaultOutputAddress
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),
-                                            &Self.defaultOutputAddress, .main, listener)
+                                            &address, .main, listener)
     }
 
-    deinit {
+    isolated deinit {
         stop()
         if let listener = outputListener {
+            var address = Self.defaultOutputAddress
             AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),
-                                                   &Self.defaultOutputAddress, .main, listener)
+                                                   &address, .main, listener)
         }
         targetGain.deallocate()
         currentGain.deallocate()
@@ -110,7 +121,7 @@ public final class SoftwareVolumeController {
             // Full level needs no tap. Let the ramp finish, then remove it so
             // 100 % costs neither latency nor CPU.
             guard isRunning else { return true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.stopDelaySeconds) { [weak self] in
+            MainThread.asyncAfter(seconds: Self.stopDelaySeconds) { [weak self] in
                 guard let self = self, self.targetGain.pointee >= 1 else { return }
                 self.stop()
             }
@@ -190,11 +201,18 @@ public final class SoftwareVolumeController {
 
         // Start from unity so the first buffers ramp down instead of jumping.
         currentGain.pointee = 1
-        let target = targetGain
-        let current = currentGain
+        // Raw pointers for the audio thread. They are allocated in init and
+        // freed in deinit, after stop() ended the IOProc, so they outlive
+        // every render call. The audio thread must not wait for the main
+        // actor, so it gets plain copies instead of reaching through self.
+        nonisolated(unsafe) let target = targetGain
+        nonisolated(unsafe) let current = currentGain
         let rampStep = Float32(1.0 / (format.mSampleRate * Self.rampSeconds))
 
-        let status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, ioQueue) { _, inData, _, outData, _ in
+        // `@Sendable` keeps the block off the main actor: it runs on `ioQueue`,
+        // and a main actor closure there would trap in Swift 6.
+        let status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, ioQueue) {
+            @Sendable _, inData, _, outData, _ in
             Self.render(input: inData, output: outData,
                         target: target.pointee, current: current, rampStep: rampStep)
         }
@@ -210,7 +228,7 @@ public final class SoftwareVolumeController {
 
     /// Audio thread. Copies input to output scaled by a gain that moves
     /// towards `target` by `rampStep` per frame. No allocation, no locks.
-    private static func render(input: UnsafePointer<AudioBufferList>,
+    nonisolated private static func render(input: UnsafePointer<AudioBufferList>,
                                output: UnsafeMutablePointer<AudioBufferList>,
                                target: Float32,
                                current: UnsafeMutablePointer<Float32>,

@@ -8,7 +8,7 @@
 import Foundation
 import Network
 
-public enum WakeOnLANMethod: String, Codable, CaseIterable {
+public enum WakeOnLANMethod: String, Codable, CaseIterable, Sendable {
     case broadcast = "Broadcast"
     case targetIP = "Target IP Address"
     case subnet = "Subnet Directed Broadcast"
