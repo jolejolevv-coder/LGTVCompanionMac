@@ -25,6 +25,7 @@ struct SettingsView: View {
     /// the settings window is open so a starting video shows up on its own.
     @State private var displaySleepApps: [AssertingApp] = []
 
+    private static let aboutIconSize: CGFloat = 96
     private static let assertionRefreshSeconds: TimeInterval = 3
     private let assertionRefreshTimer = Timer.publish(
         every: assertionRefreshSeconds,
@@ -233,16 +234,9 @@ struct SettingsView: View {
 
     private var aboutTab: some View {
         VStack(spacing: 20) {
-            if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
-               let image = NSImage(contentsOf: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .frame(width: 96, height: 96)
-            } else {
-                Image(systemName: "tv.and.hifispeaker.fill")
-                    .font(.system(size: 72))
-                    .foregroundStyle(.blue)
-            }
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: Self.aboutIconSize, height: Self.aboutIconSize)
             
             Text("LGTV Companion")
                 .font(.title)

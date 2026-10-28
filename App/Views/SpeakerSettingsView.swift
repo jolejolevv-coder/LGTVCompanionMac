@@ -254,7 +254,7 @@ private struct EqualizerBand: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(Self.gainLabel(gain))
-                .font(.system(size: 9).monospacedDigit())
+                .font(.caption2.monospacedDigit())
                 .foregroundStyle(gain == 0 ? Color.secondary : Color.primary)
 
             GeometryReader { geometry in
@@ -274,7 +274,7 @@ private struct EqualizerBand: View {
                         .frame(maxWidth: .infinity)
                         .offset(y: geometry.size.height / 2)
                     Circle()
-                        .fill(Color.white)
+                        .fill(MenuColors.selectedFill)
                         .shadow(color: .black.opacity(0.3), radius: 1.5, y: 0.5)
                         .frame(width: Self.thumbDiameter, height: Self.thumbDiameter)
                         .frame(maxWidth: .infinity)
@@ -295,7 +295,7 @@ private struct EqualizerBand: View {
             .frame(height: Self.trackHeight)
 
             Text(label)
-                .font(.system(size: 9))
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement()

@@ -8,6 +8,16 @@
 
 import SwiftUI
 
+/// Colors for "selected" and "filled" parts of the panel controls. They follow
+/// the appearance, so the fill and its text keep their contrast in light and
+/// dark mode (a fixed black and white pair vanishes in one of the two).
+enum MenuColors {
+    /// Fill of a selected capsule and of a slider.
+    static let selectedFill = Color.primary
+    /// Text on top of `selectedFill`.
+    static let onSelectedFill = Color(nsColor: .windowBackgroundColor)
+}
+
 enum MenuMetrics {
     static let panelWidth: CGFloat = 320
     static let panelPadding: CGFloat = 12
@@ -127,7 +137,7 @@ struct PillSlider: View {
                 Capsule()
                     .fill(Color.primary.opacity(0.12))
                 Capsule()
-                    .fill(Color.white)
+                    .fill(MenuColors.selectedFill)
                     .frame(width: fillWidth)
                     .shadow(color: .black.opacity(0.18), radius: 1.5, x: 0, y: 0.5)
             }
@@ -293,11 +303,11 @@ struct CapsulePicker<Option: Hashable>: View {
             } label: {
                 Text(label(option))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.black : Color.primary)
+                    .foregroundStyle(isSelected ? MenuColors.onSelectedFill : Color.primary)
                     .lineLimit(1)
                     .padding(.vertical, 5)
                     .frame(maxWidth: .infinity)
-                    .background(isSelected ? Color.white : Color.primary.opacity(0.1), in: Capsule())
+                    .background(isSelected ? MenuColors.selectedFill : Color.primary.opacity(0.1), in: Capsule())
                     .contentShape(Capsule())
             }
             .buttonStyle(PressableStyle())
