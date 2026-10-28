@@ -173,11 +173,10 @@ struct DeviceMenuSection: View {
                 tvVolumeRow
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                MenuCaption(text: "Input")
+            CapsuleGroup(caption: "Input", spokenName: "TV input") {
                 HStack(spacing: 6) {
                     ForEach(Self.hdmiInputs, id: \.self) { number in
-                        CapsuleButton(title: "HDMI \(number)") {
+                        CapsuleButton(title: "HDMI \(number)", help: "Switch the TV to HDMI \(number)") {
                             run { try await deviceManager.switchInput("HDMI_\(number)", for: device) }
                         }
                     }
@@ -294,8 +293,7 @@ struct SpeakerMenuSection: View {
                 }
             )
 
-            VStack(alignment: .leading, spacing: 6) {
-                MenuCaption(text: "Subwoofer")
+            CapsuleGroup(caption: "Subwoofer") {
                 CapsulePicker(
                     options: EdifierSubOutLevel.allCases,
                     selection: speakers.subOut,
@@ -305,8 +303,7 @@ struct SpeakerMenuSection: View {
                 )
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                MenuCaption(text: "Sound")
+            CapsuleGroup(caption: "Sound") {
                 CapsulePicker(
                     options: SpeakerSoundLibrary.menuOrder,
                     selection: automation.currentSound,
@@ -317,13 +314,13 @@ struct SpeakerMenuSection: View {
                 )
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                MenuCaption(text: "Input")
+            CapsuleGroup(caption: "Input", spokenName: "Speaker input") {
                 CapsulePicker(
                     options: EdifierInput.allCases,
                     selection: speakers.input,
                     label: { $0.shortLabel },
                     isEnabled: speakers.input != nil,
+                    help: { $0.shortLabel == $0.label ? nil : $0.label },
                     onSelect: { speakers.setInput($0) }
                 )
             }

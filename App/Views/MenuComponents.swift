@@ -28,6 +28,9 @@ enum MenuMetrics {
     static let rowSpacing: CGFloat = 10
     static let sliderHeight: CGFloat = 24
     static let tileIconDiameter: CGFloat = 36
+    /// Smallest height of a capsule button, so it is an easy pointer target.
+    static let capsuleMinHeight: CGFloat = 24
+    static let captionSpacing: CGFloat = 6
 }
 
 /// How far the arrow keys move a volume slider (on the 0...100 scale of the
@@ -322,6 +325,8 @@ struct ControlTile: View {
 /// Small capsule button, used for the input shortcuts.
 struct CapsuleButton: View {
     let title: String
+    /// Tooltip and spoken hint, for a title that is ambiguous on its own.
+    var help: String?
     let action: () -> Void
 
     var body: some View {
@@ -330,11 +335,34 @@ struct CapsuleButton: View {
                 .font(.system(size: 11, weight: .medium))
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: MenuMetrics.capsuleMinHeight)
                 .background(Color.primary.opacity(0.1), in: Capsule())
                 .contentShape(Capsule())
+                // The keyboard focus ring follows the capsule, not the bounds.
+                .contentShape(.focusEffect, Capsule())
         }
         .buttonStyle(PressableStyle())
+        .help(help ?? "")
+    }
+}
+
+/// A caption over a group of capsules. VoiceOver reads the group under the
+/// caption's name ("Input, group"), so "HDMI 1" and "BT" have a context.
+struct CapsuleGroup<Content: View>: View {
+    let caption: String
+    /// What VoiceOver calls the group, when the caption alone is not unique
+    /// in the panel (both the TV and the speakers have an "Input").
+    var spokenName: String?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MenuMetrics.captionSpacing) {
+            MenuCaption(text: caption)
+                .accessibilityHidden(true)
+            content
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(spokenName ?? caption)
     }
 }
 
@@ -348,6 +376,8 @@ struct CapsulePicker<Option: Hashable>: View {
     var isEnabled = true
     /// Capsules per row. nil puts all options into a single row.
     var columns: Int?
+    /// Tooltip and spoken name for an option whose label is short or cryptic.
+    var help: (Option) -> String? = { _ in nil }
     let onSelect: (Option) -> Void
 
     private static var spacing: CGFloat { 6 }
@@ -380,11 +410,14 @@ struct CapsulePicker<Option: Hashable>: View {
                     .foregroundStyle(isSelected ? MenuColors.onSelectedFill : Color.primary)
                     .lineLimit(1)
                     .padding(.vertical, 5)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: MenuMetrics.capsuleMinHeight)
                     .background(isSelected ? MenuColors.selectedFill : Color.primary.opacity(0.1), in: Capsule())
                     .contentShape(Capsule())
+                    .contentShape(.focusEffect, Capsule())
             }
             .buttonStyle(PressableStyle())
+            .help(help(option) ?? "")
+            .accessibilityLabel(help(option) ?? label(option))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }
