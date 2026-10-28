@@ -130,10 +130,16 @@ struct ContentView: View {
     }
 
     private func binding(for device: WebOSDevice) -> Binding<WebOSDevice> {
-        guard let index = deviceManager.devices.firstIndex(where: { $0.id == device.id }) else {
-            fatalError("Device not found")
-        }
-        return $deviceManager.devices[index]
+        // Looked up by id on every access: the TV can be removed while the
+        // detail view is still being rendered. Then reads fall back to the
+        // last known value and writes are ignored.
+        Binding(
+            get: { deviceManager.devices.first { $0.id == device.id } ?? device },
+            set: { updated in
+                guard let index = deviceManager.devices.firstIndex(where: { $0.id == device.id }) else { return }
+                deviceManager.devices[index] = updated
+            }
+        )
     }
 
     private func confirmRemove(_ device: WebOSDevice) {
