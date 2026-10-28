@@ -203,6 +203,7 @@ class UserIdleMonitor {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             self?.checkIdleState()
         }
+        timer?.tolerance = TimerTolerance.tolerance(for: interval)
         RunLoop.main.add(timer!, forMode: .common)
     }
 

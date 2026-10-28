@@ -74,6 +74,8 @@ public class DeviceManager: ObservableObject {
     @Published public var assertionAllowlist: [AssertingApp] = []
 
     private var clients: [UUID: WebOSClient] = [:]
+    /// One per client: shares a running connect/register between commands.
+    private var sessions: [UUID: TVSession] = [:]
     private var powerMonitor: PowerEventMonitor?
     private var idleMonitor: UserIdleMonitor?
     private var displayMonitor: DisplayConfigurationMonitor?
@@ -99,9 +101,11 @@ public class DeviceManager: ObservableObject {
     /// coming up) — send several with a delay between.
     private static let wakeRetryCount = 5
     private static let wakeRetryDelayNs: UInt64 = 2_000_000_000 // 2s
+    /// Status poll that keeps the TV connections warm.
+    private static let keepaliveSeconds: TimeInterval = 60
 
     public init(enableSoftwareVolume: Bool = false,
-                pairingKeyStore: PairingKeyStoring = KeychainPairingKeyStore()) {
+                pairingKeyStore: PairingKeyStoring = CachingPairingKeyStore(KeychainPairingKeyStore())) {
         softwareVolumeController = enableSoftwareVolume ? SoftwareVolumeController() : nil
         self.pairingKeyStore = pairingKeyStore
         loadDevices()
@@ -144,22 +148,30 @@ public class DeviceManager: ObservableObject {
             devices[index] = device
             saveDevices()
             // Connection parameters may have changed — drop cached client.
-            clients[device.id]?.disconnect()
-            clients.removeValue(forKey: device.id)
+            dropClient(for: device.id)
         }
     }
 
     public func removeDevice(_ device: WebOSDevice) {
         devices.removeAll { $0.id == device.id }
-        clients[device.id]?.disconnect()
-        clients.removeValue(forKey: device.id)
+        dropClient(for: device.id)
         pairingKeyStore.delete(for: device.id)
         saveDevices()
     }
 
+    private func dropClient(for deviceId: UUID) {
+        clients[deviceId]?.disconnect()
+        clients.removeValue(forKey: deviceId)
+        sessions.removeValue(forKey: deviceId)
+    }
+
     public func getClient(for device: WebOSDevice) -> WebOSClient {
-        if let client = clients[device.id] {
-            return client
+        clientAndSession(for: device).client
+    }
+
+    private func clientAndSession(for device: WebOSDevice) -> (client: WebOSClient, session: TVSession) {
+        if let client = clients[device.id], let session = sessions[device.id] {
+            return (client, session)
         }
 
         let client = WebOSClient(device: device)
@@ -178,8 +190,10 @@ public class DeviceManager: ObservableObject {
                 self?.applyStatusUpdate(update, for: deviceId)
             }
         }
+        let session = TVSession(transport: client)
         clients[device.id] = client
-        return client
+        sessions[device.id] = session
+        return (client, session)
     }
 
     /// Main thread. Merges a pushed change into the published status.
@@ -270,25 +284,19 @@ public class DeviceManager: ObservableObject {
         for device: WebOSDevice,
         _ operation: (WebOSClient) async throws -> T
     ) async throws -> T {
-        let client = await MainActor.run { self.getClient(for: device) }
+        // Both dictionaries are main-actor state.
+        let (client, session) = await MainActor.run { self.clientAndSession(for: device) }
 
-        if !client.isConnected {
-            try await client.connect()
-        }
-        if !client.isPaired {
-            try await client.register()
-        }
+        // Concurrent callers share one connect/register (see TVSession).
+        try await session.ensureReady()
 
         do {
             return try await operation(client)
         } catch {
-            // Stale connection? Reconnect once and retry. Await the teardown
-            // (disconnectAndWait) before reconnecting — a fire-and-forget
-            // disconnect runs on the client's serial queue and would otherwise
-            // race connect() and cancel the brand-new connection.
-            await client.disconnectAndWait()
-            try await client.connect()
-            try await client.register()
+            // Stale connection? Reconnect once and retry, but only for
+            // errors a fresh connection can fix.
+            guard TVSession.isTransient(error) else { throw error }
+            try await session.reconnect()
             return try await operation(client)
         }
     }
@@ -401,10 +409,11 @@ public class DeviceManager: ObservableObject {
         // seconds — too slow when the Mac is about to sleep. A periodic
         // status poll keeps the sockets open so power-off is a single send.
         keepaliveTimer?.invalidate()
-        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: Self.keepaliveSeconds, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             Task { await self.refreshAllStatuses() }
         }
+        keepaliveTimer?.tolerance = TimerTolerance.tolerance(for: Self.keepaliveSeconds)
         Task { await self.refreshAllStatuses() } // warm up immediately
 
         isMonitoringPowerEvents = true
@@ -426,7 +435,9 @@ public class DeviceManager: ObservableObject {
     ///   otherwise the TV would stay on behind a dark screen).
     public func powerOffManagedDevices(fullOff: Bool = false) async {
         // Skip TVs currently showing a non-Mac input (e.g. a console).
-        let targets = await devicesShowingMacInput(managedDevices)
+        // `devices` is published on the main actor; read it there.
+        let managed = await MainActor.run { self.managedDevices }
+        let targets = await devicesShowingMacInput(managed)
         await withTaskGroup(of: Void.self) { group in
             for device in targets {
                 group.addTask {
@@ -494,6 +505,7 @@ public class DeviceManager: ObservableObject {
                 // The tap does not reliably survive sleep. Rebuild it.
                 await MainActor.run {
                     self.softwareVolumeController?.stop()
+                    self.softwareVolumeController?.refreshOutputDevice()
                     self.syncSoftwareVolume()
                     self.speakerAutomation.macDidWake()
                 }
@@ -763,13 +775,13 @@ public class DeviceManager: ObservableObject {
     public func setSoftwareVolume(level: Double) {
         softwareVolumeLevel = SoftwareVolume.clamp(level)
         softwareVolumeMuted = false
-        saveSettings()
+        saveSettingsSoon()
         syncSoftwareVolume()
     }
 
     public func toggleSoftwareMute() {
         softwareVolumeMuted.toggle()
-        saveSettings()
+        saveSettingsSoon()
         syncSoftwareVolume()
     }
 
@@ -824,7 +836,7 @@ public class DeviceManager: ObservableObject {
         let wanted = SoftwareVolume.shouldControl(
             enabled: softwareVolumeEnabled,
             tvCanAdjustVolume: tvCanAdjustVolume,
-            outputIsDigitalDisplay: SoftwareVolumeController.defaultOutputIsDigitalDisplay()
+            outputIsDigitalDisplay: controller.outputIsDigitalDisplay
         )
         guard wanted else {
             controller.stop()
@@ -878,7 +890,30 @@ public class DeviceManager: ObservableObject {
         }
     }
 
+    /// How long the volume keys wait for a further press before the level is
+    /// written to the preferences. Holding a key repeats ~15 times a second.
+    private static let settingsSaveDebounceSeconds: TimeInterval = 1
+    private var pendingSettingsSave: DispatchWorkItem?
+
+    /// Debounced saveSettings() for the volume keys and the menu slider.
+    /// Main thread.
+    private func saveSettingsSoon() {
+        pendingSettingsSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.saveSettings() }
+        pendingSettingsSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settingsSaveDebounceSeconds, execute: work)
+    }
+
+    /// Writes a debounced save that has not run yet. Call before quitting.
+    public func flushPendingSettings() {
+        guard pendingSettingsSave != nil else { return }
+        saveSettings()
+    }
+
     private func saveSettings() {
+        // Whatever was waiting is part of this write.
+        pendingSettingsSave?.cancel()
+        pendingSettingsSave = nil
         var settings: [String: Any] = [
             "userIdleEnabled": userIdleEnabled,
             "userIdleTimeout": userIdleTimeout,

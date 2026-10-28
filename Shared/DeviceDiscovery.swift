@@ -29,6 +29,23 @@ public struct DiscoveredDevice {
     }
 }
 
+/// Remembers which addresses a scan already handled. A TV answers each
+/// M-SEARCH more than once (two search targets, each sent twice); every
+/// answer would otherwise cost a description fetch, a port probe and a MAC
+/// lookup.
+struct ScanAddressFilter {
+    private var seen = Set<String>()
+
+    /// True the first time an address is offered after the last reset.
+    mutating func isFirstSighting(of address: String) -> Bool {
+        seen.insert(address).inserted
+    }
+
+    mutating func reset() {
+        seen.removeAll()
+    }
+}
+
 public class DeviceDiscovery: ObservableObject {
     @Published public var discoveredDevices: [DiscoveredDevice] = []
     @Published public var isScanning = false
@@ -42,6 +59,8 @@ public class DeviceDiscovery: ObservableObject {
     /// scan ended) — otherwise a slow fetch appends a "ghost" device into a
     /// later, freshly-cleared result list.
     private var scanGeneration = 0
+    /// Main thread only (SSDP replies arrive on the main queue).
+    private var scanAddresses = ScanAddressFilter()
 
     /// Search targets: dedicated webOS second-screen service, plus generic
     /// rootdevice as fallback for TVs that don't answer the specific ST.
@@ -64,6 +83,7 @@ public class DeviceDiscovery: ObservableObject {
 
         isScanning = true
         scanGeneration += 1
+        scanAddresses.reset()
         discoveredDevices.removeAll()
 
         // FIX: the previous implementation sent the M-SEARCH on one
@@ -176,13 +196,18 @@ public class DeviceDiscovery: ObservableObject {
             }
         }
 
-        if let urlString = locationURL, let url = URL(string: urlString) {
-            // Prefer the IP from the LOCATION URL if we couldn't resolve one
-            if ipAddress.isEmpty, let host = url.host {
-                ipAddress = host
-            }
+        let descriptionURL = locationURL.flatMap { URL(string: $0) }
+        // Prefer the IP from the LOCATION URL if we couldn't resolve one
+        if ipAddress.isEmpty, let host = descriptionURL?.host {
+            ipAddress = host
+        }
+
+        // Later answers from an address this scan already handled add nothing.
+        guard !ipAddress.isEmpty, scanAddresses.isFirstSighting(of: ipAddress) else { return }
+
+        if let url = descriptionURL {
             fetchDeviceDescription(from: url, ipAddress: ipAddress, generation: generation)
-        } else if !ipAddress.isEmpty {
+        } else {
             // Add device with limited info
             considerDevice(DiscoveredDevice(
                 ipAddress: ipAddress,

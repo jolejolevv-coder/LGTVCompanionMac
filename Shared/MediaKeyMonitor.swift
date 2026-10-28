@@ -79,6 +79,11 @@ public final class MediaKeyMonitor {
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
+        if let tap = eventTap {
+            // The tap holds an unretained pointer to this object. Invalidating
+            // the port guarantees no callback can arrive after we are gone.
+            CFMachPortInvalidate(tap)
+        }
         eventTap = nil
         runLoopSource = nil
         if let monitor = globalMonitor {

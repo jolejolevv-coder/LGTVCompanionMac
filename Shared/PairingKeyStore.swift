@@ -72,6 +72,38 @@ public struct KeychainPairingKeyStore: PairingKeyStoring {
     }
 }
 
+/// Remembers what the wrapped store holds, so saving a key that did not
+/// change costs no keychain call. The device list is saved on every edit and
+/// each save offers all pairing keys again.
+public final class CachingPairingKeyStore: PairingKeyStoring {
+    private let store: PairingKeyStoring
+    private let lock = NSLock()
+    private var keys: [UUID: String] = [:]
+
+    public init(_ store: PairingKeyStoring) {
+        self.store = store
+    }
+
+    public func save(_ key: String, for deviceID: UUID) -> Bool {
+        if lock.withLock({ keys[deviceID] }) == key { return true }
+        guard store.save(key, for: deviceID) else { return false }
+        lock.withLock { keys[deviceID] = key }
+        return true
+    }
+
+    public func load(for deviceID: UUID) -> String? {
+        if let cached = lock.withLock({ keys[deviceID] }) { return cached }
+        let key = store.load(for: deviceID)
+        if let key = key { lock.withLock { keys[deviceID] = key } }
+        return key
+    }
+
+    public func delete(for deviceID: UUID) {
+        store.delete(for: deviceID)
+        lock.withLock { keys[deviceID] = nil }
+    }
+}
+
 /// Reads and writes the device list, keeping pairing keys out of it.
 enum DevicePersistence {
 

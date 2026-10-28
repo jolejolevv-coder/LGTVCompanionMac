@@ -23,6 +23,11 @@ public final class SoftwareVolumeController {
 
     public private(set) var isRunning = false
 
+    /// Whether the default output is an HDMI/DisplayPort device. Cached: the
+    /// answer needs two Core Audio reads, too heavy for every volume key
+    /// press. Refreshed when the default output device changes.
+    public private(set) var outputIsDigitalDisplay = false
+
     /// Time for a full-scale gain change. Long enough to avoid clicks, short
     /// enough to feel instant.
     private static let rampSeconds: Double = 0.02
@@ -55,7 +60,10 @@ public final class SoftwareVolumeController {
         targetGain.initialize(to: 1)
         currentGain.initialize(to: 1)
 
+        outputIsDigitalDisplay = Self.defaultOutputIsDigitalDisplay()
+
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.refreshOutputDevice()
             self?.onOutputDeviceChanged?()
         }
         outputListener = listener
@@ -84,6 +92,12 @@ public final class SoftwareVolumeController {
         }
         return transport == kAudioDeviceTransportTypeHDMI
             || transport == kAudioDeviceTransportTypeDisplayPort
+    }
+
+    /// Reads the default output again. Called by the device change listener;
+    /// also after wake, when the output may have changed unnoticed.
+    public func refreshOutputDevice() {
+        outputIsDigitalDisplay = Self.defaultOutputIsDigitalDisplay()
     }
 
     /// Applies a gain in 0...1. Returns false if the tap could not be set up;

@@ -79,6 +79,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             DeviceManager.shared.ensureMediaKeyTap()
         }
+
+        // Sleep/wake automation must run without a window too. The views
+        // still call this; it returns at once when already running.
+        DeviceManager.shared.startPowerEventMonitoring()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -135,6 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Clean up
+        // The volume level is saved with a delay; don't lose the last change.
+        DeviceManager.shared.flushPendingSettings()
     }
 }

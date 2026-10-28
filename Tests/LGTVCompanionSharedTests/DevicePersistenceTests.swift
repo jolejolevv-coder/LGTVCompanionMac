@@ -5,13 +5,19 @@ import XCTest
 private final class FakeKeyStore: PairingKeyStoring {
     var keys: [UUID: String] = [:]
     var acceptsWrites = true
+    private(set) var saveCalls = 0
+    private(set) var loadCalls = 0
 
     func save(_ key: String, for deviceID: UUID) -> Bool {
+        saveCalls += 1
         guard acceptsWrites else { return false }
         keys[deviceID] = key
         return true
     }
-    func load(for deviceID: UUID) -> String? { keys[deviceID] }
+    func load(for deviceID: UUID) -> String? {
+        loadCalls += 1
+        return keys[deviceID]
+    }
     func delete(for deviceID: UUID) { keys[deviceID] = nil }
 }
 
@@ -97,5 +103,63 @@ final class DevicePersistenceTests: XCTestCase {
 
     func testCorruptFileYieldsNilInsteadOfAnEmptyList() {
         XCTAssertNil(DevicePersistence.decode(Data("not json".utf8), keyStore: FakeKeyStore()))
+    }
+}
+
+final class CachingPairingKeyStoreTests: XCTestCase {
+
+    func testSavingTheSameKeyAgainDoesNotTouchTheStore() {
+        let inner = FakeKeyStore()
+        let store = CachingPairingKeyStore(inner)
+        let id = UUID()
+
+        XCTAssertTrue(store.save("key-1", for: id))
+        XCTAssertTrue(store.save("key-1", for: id))
+
+        XCTAssertEqual(inner.saveCalls, 1)
+    }
+
+    func testAChangedKeyIsWritten() {
+        let inner = FakeKeyStore()
+        let store = CachingPairingKeyStore(inner)
+        let id = UUID()
+
+        _ = store.save("key-1", for: id)
+        _ = store.save("key-2", for: id)
+
+        XCTAssertEqual(inner.saveCalls, 2)
+        XCTAssertEqual(inner.keys[id], "key-2")
+    }
+
+    func testARefusedKeyIsNotRemembered() {
+        let inner = FakeKeyStore()
+        inner.acceptsWrites = false
+        let store = CachingPairingKeyStore(inner)
+        let id = UUID()
+
+        XCTAssertFalse(store.save("key-1", for: id))
+        inner.acceptsWrites = true
+
+        XCTAssertTrue(store.save("key-1", for: id))
+        XCTAssertEqual(inner.saveCalls, 2)
+    }
+
+    func testLoadedKeyCountsAsStoredAndDeleteForgetsIt() {
+        let inner = FakeKeyStore()
+        let id = UUID()
+        inner.keys[id] = "key-1"
+        let store = CachingPairingKeyStore(inner)
+
+        XCTAssertEqual(store.load(for: id), "key-1")
+        XCTAssertEqual(store.load(for: id), "key-1")
+        XCTAssertEqual(inner.loadCalls, 1)
+        XCTAssertTrue(store.save("key-1", for: id))
+        XCTAssertEqual(inner.saveCalls, 0)
+
+        store.delete(for: id)
+
+        XCTAssertNil(store.load(for: id))
+        XCTAssertTrue(store.save("key-1", for: id))
+        XCTAssertEqual(inner.saveCalls, 1)
     }
 }
