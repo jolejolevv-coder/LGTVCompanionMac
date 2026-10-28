@@ -25,8 +25,11 @@ struct SettingsView: View {
     /// the settings window is open so a starting video shows up on its own.
     @State private var displaySleepApps: [AssertingApp] = []
 
+    private static let assertionRefreshSeconds: TimeInterval = 3
     private let assertionRefreshTimer = Timer.publish(
-        every: 3, on: .main, in: .common
+        every: assertionRefreshSeconds,
+        tolerance: TimerTolerance.tolerance(for: assertionRefreshSeconds),
+        on: .main, in: .common
     ).autoconnect()
 
     init() {

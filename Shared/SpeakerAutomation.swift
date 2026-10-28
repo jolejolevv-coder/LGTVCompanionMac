@@ -122,6 +122,7 @@ public final class SpeakerAutomation: ObservableObject {
         let timer = Timer(timeInterval: Self.scheduleCheckSeconds, repeats: true) { [weak self] _ in
             self?.checkSchedule()
         }
+        timer.tolerance = TimerTolerance.tolerance(for: Self.scheduleCheckSeconds)
         RunLoop.main.add(timer, forMode: .common)
         scheduleTimer = timer
         checkSchedule()

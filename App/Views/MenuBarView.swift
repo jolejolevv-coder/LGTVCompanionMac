@@ -367,6 +367,9 @@ struct SpeakerMenuSection: View {
 struct DisplayScalingSection: View {
     @State private var displays: [DisplayInfo] = []
     @State private var currentModes: [CGDirectDisplayID: DisplayModeInfo] = [:]
+    /// Read on refresh, not while the menu is built: listing the modes of a
+    /// display is a slow Core Graphics call.
+    @State private var scalingModes: [CGDirectDisplayID: [DisplayModeInfo]] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -387,7 +390,7 @@ struct DisplayScalingSection: View {
                         Spacer()
 
                         Menu {
-                            ForEach(DisplayControl.scalingModes(for: display.id)) { mode in
+                            ForEach(scalingModes[display.id] ?? []) { mode in
                                 Button {
                                     DisplayControl.setMode(mode, on: display.id)
                                     refresh()
@@ -423,9 +426,12 @@ struct DisplayScalingSection: View {
     private func refresh() {
         displays = DisplayControl.activeDisplays()
         var modes: [CGDirectDisplayID: DisplayModeInfo] = [:]
+        var available: [CGDirectDisplayID: [DisplayModeInfo]] = [:]
         for display in displays {
             modes[display.id] = DisplayControl.currentMode(for: display.id)
+            available[display.id] = DisplayControl.scalingModes(for: display.id)
         }
         currentModes = modes
+        scalingModes = available
     }
 }

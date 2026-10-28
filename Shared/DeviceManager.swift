@@ -101,9 +101,11 @@ public class DeviceManager: ObservableObject {
     /// coming up) — send several with a delay between.
     private static let wakeRetryCount = 5
     private static let wakeRetryDelayNs: UInt64 = 2_000_000_000 // 2s
+    /// Status poll that keeps the TV connections warm.
+    private static let keepaliveSeconds: TimeInterval = 60
 
     public init(enableSoftwareVolume: Bool = false,
-                pairingKeyStore: PairingKeyStoring = KeychainPairingKeyStore()) {
+                pairingKeyStore: PairingKeyStoring = CachingPairingKeyStore(KeychainPairingKeyStore())) {
         softwareVolumeController = enableSoftwareVolume ? SoftwareVolumeController() : nil
         self.pairingKeyStore = pairingKeyStore
         loadDevices()
@@ -407,10 +409,11 @@ public class DeviceManager: ObservableObject {
         // seconds — too slow when the Mac is about to sleep. A periodic
         // status poll keeps the sockets open so power-off is a single send.
         keepaliveTimer?.invalidate()
-        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: Self.keepaliveSeconds, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             Task { await self.refreshAllStatuses() }
         }
+        keepaliveTimer?.tolerance = TimerTolerance.tolerance(for: Self.keepaliveSeconds)
         Task { await self.refreshAllStatuses() } // warm up immediately
 
         isMonitoringPowerEvents = true
