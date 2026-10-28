@@ -48,10 +48,13 @@ public class DeviceManager: ObservableObject {
     @Published public var userIdleTimeout: TimeInterval = 300 // 5 minutes
     @Published public var mediaKeysEnabled = false
 
-    /// Message of the last TV command that failed, nil after the next command
-    /// that worked. Background polling (status refresh) does not touch it, a
-    /// TV that is switched off is a normal state there. Not shown in the UI yet.
+    /// What went wrong with the last TV command that failed, as a sentence for
+    /// the user (cause and what to check). nil after the next command that
+    /// worked. Background polling (status refresh) does not touch it, a TV
+    /// that is switched off is a normal state there. Shown in the menu panel.
     @Published public private(set) var lastError: String?
+    /// The TV `lastError` is about. nil when it is not about one TV.
+    @Published public private(set) var lastErrorDeviceID: UUID?
 
     /// Mac-side software volume, used while the TV cannot change the volume
     /// itself (fixed-level output such as optical).
@@ -263,7 +266,7 @@ public class DeviceManager: ObservableObject {
             }
         }
         if let lastWakeError = lastWakeError {
-            await recordFailure(of: "Wake on LAN", error: lastWakeError)
+            await recordFailure(of: "Wake on LAN", error: lastWakeError, device: device)
             throw lastWakeError
         }
     }
@@ -298,7 +301,7 @@ public class DeviceManager: ObservableObject {
             if reportsFailure { await clearLastError() }
             return result
         } catch {
-            if reportsFailure { await recordFailure(of: "TV command for \(device.name)", error: error) }
+            if reportsFailure { await recordFailure(of: "TV command for \(device.name)", error: error, device: device) }
             throw error
         }
     }
@@ -324,15 +327,20 @@ public class DeviceManager: ObservableObject {
         }
     }
 
-    private func recordFailure(of action: String, error: Error) async {
-        let message = error.localizedDescription
-        Log.tv.error("\(action, privacy: .public) failed: \(message, privacy: .public)")
-        await MainActor.run { self.lastError = message }
+    private func recordFailure(of action: String, error: Error, device: WebOSDevice) async {
+        let cause = error.localizedDescription
+        Log.tv.error("\(action, privacy: .public) failed: \(cause, privacy: .public)")
+        let message = TVFailureText.message(for: error, tvName: device.name)
+        await MainActor.run {
+            self.lastError = message
+            self.lastErrorDeviceID = device.id
+        }
     }
 
     private func clearLastError() async {
         await MainActor.run {
             if self.lastError != nil { self.lastError = nil }
+            if self.lastErrorDeviceID != nil { self.lastErrorDeviceID = nil }
         }
     }
 
@@ -391,7 +399,7 @@ public class DeviceManager: ObservableObject {
             try await session.reconnect()
             await clearLastError()
         } catch {
-            await recordFailure(of: "Pairing \(device.name)", error: error)
+            await recordFailure(of: "Pairing \(device.name)", error: error, device: device)
             throw error
         }
     }

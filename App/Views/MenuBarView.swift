@@ -137,6 +137,13 @@ struct DeviceMenuSection: View {
                 SymbolTile(systemName: "tv")
             }
 
+            if let failure = failureText {
+                Label(failure, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: 4) {
                 ControlTile(title: "Screen On", systemName: "tv", isDisabled: busy) {
                     run { try await deviceManager.screenOn(device) }
@@ -221,6 +228,12 @@ struct DeviceMenuSection: View {
         }
     }
 
+    /// The last failed command of this TV, until a command works again.
+    private var failureText: String? {
+        guard deviceManager.lastErrorDeviceID == device.id else { return nil }
+        return deviceManager.lastError
+    }
+
     private var statusColor: Color {
         guard let status = status else { return .gray }
         if status.isScreenOn { return .green }
@@ -236,6 +249,8 @@ struct DeviceMenuSection: View {
     private func run(_ action: @escaping () async throws -> Void) {
         busy = true
         Task {
+            // A failure is kept in deviceManager.lastError and shown in the
+            // card, so it is not handled here.
             try? await action()
             await MainActor.run { busy = false }
         }
