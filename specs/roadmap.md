@@ -6,7 +6,7 @@
 - Freigegeben 28.10.2026, je Phase eine eigene Sitzung: BAMA Verbesserungen,
   `specs/features/bama-review-improvements.md`
   - Phase 1 Stabilität: fertig 28.10.2026 (merge 0de3cb7, 104 Tests)
-  - Phase 2 Testbarkeit und Werkzeug
+  - Phase 2 Testbarkeit und Werkzeug: fertig 28.10.2026 (124 Tests, --install)
   - Phase 3 Bedienung nach Apple Regeln
   - Phase 4 Tastatur und VoiceOver
   - Phase 5 Swift 6
@@ -19,3 +19,12 @@
    ungenau, deshalb vor dem Plan selbst nachgeprüft.
 3. Besser spezifizieren: der Pairing Knopf in DeviceDetailView umgeht noch
    TVSession, das gehört in Phase 3 (Bedienung).
+
+## Retrospektive Phase 2 (BAMA)
+1. Gut: Tastenweg ist jetzt eine reine Funktion mit Tabellentest, das Build
+   Skript prüft Signatur und Plist und installiert selbst.
+2. Falsche Annahmen: der Builder hielt einen toten Parameter für gewünscht,
+   die Projektregel "nie installieren" widersprach dem bisherigen Ablauf; beides
+   korrigiert.
+3. Besser spezifizieren: im Brief sagen, welche Testfälle Pflicht sind, statt
+   Beispiele zu nennen, die als Signaturvorgabe gelesen werden.

@@ -23,7 +23,8 @@ geprüft. Ergebnis und Plan stehen in `specs/features/bama-review-improvements.m
    `.cancelled` Zweigen (`WebOSClient.swift:235-246`), Retry nur bei
    transienten Fehlern, `startPowerEventMonitoring` in
    `applicationDidFinishLaunching`, übrige Punkte der Liste je ein Commit.
-3. Jetzt Phase 2, danach 3 bis 5 laut Spec, alles in dieser Sitzung (Nutzer:
+3. Erledigt 28.10.: Phase 2 (merge auf main, per --install installiert).
+   Jetzt Phase 3, danach 4 und 5 laut Spec, alles in dieser Sitzung (Nutzer:
    "mach dann hier"). Phase 3 zusätzlich: Pair Again in DeviceDetailView
    über DeviceManager und TVSession führen.
 4. Von Hand offen nach Phase 1: Lautstärketasten, Sleep und Wake nach
