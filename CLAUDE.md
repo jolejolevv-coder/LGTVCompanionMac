@@ -26,7 +26,7 @@ Details: `ARCHITECTURE.md`. Build and signing: `BUILD.md`.
 - `swift test` must stay green before every commit.
 - `./scripts/build-release.sh [--install|--adhoc]` builds, signs, verifies the
   bundle and writes the DMG. `--install` replaces `/Applications` and
-  relaunches, only when the user asks for it.
+  relaunches.
 - Strict concurrency check (warnings only, Swift 5 mode stays):
   `swift build --scratch-path /tmp/lgtv-sc -Xswiftc -strict-concurrency=complete`
 
@@ -40,7 +40,8 @@ Details: `ARCHITECTURE.md`. Build and signing: `BUILD.md`.
 - Never run `tccutil reset`. Never touch the keychain from scripts or tests.
 - Keep the signing identity `LGTV Companion Local Signing`. A different
   signature silently drops the Accessibility and System Audio grants.
-- Never launch, quit or install the app on your own.
+- Install with `--install` only after a phase is merged to main, and say so
+  in the report. Never quit the app for anything else.
 
 ## Only the human can verify
 

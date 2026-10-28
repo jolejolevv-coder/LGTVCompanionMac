@@ -35,33 +35,13 @@ final class VolumeKeyRouteTests: XCTestCase {
         Row(name: "software flag with unknown TV answer", speakers: false, hasTV: true, software: true, tvCanAdjust: nil, expected: .softwareVolume),
     ]
 
-    private let allKeys: [MediaKeyEvent] = [.volumeUp, .volumeDown, .mute]
-
     func testRouteTable() {
         for row in rows {
-            for key in allKeys {
-                let route = VolumeKeyRoute.route(for: key,
-                                                 speakersCanHandleVolumeKeys: row.speakers,
-                                                 hasEnabledTV: row.hasTV,
-                                                 softwareVolumeActive: row.software,
-                                                 tvCanAdjustVolume: row.tvCanAdjust)
-                XCTAssertEqual(route, row.expected, "\(row.name), key \(key)")
-            }
-        }
-    }
-
-    /// The mute key is routed like the volume keys, so it can never reach the
-    /// TV while the speakers or software volume own the volume.
-    func testMuteKeyFollowsTheSameRouteAsVolumeKeys() {
-        for row in rows {
-            let routes = allKeys.map {
-                VolumeKeyRoute.route(for: $0,
-                                     speakersCanHandleVolumeKeys: row.speakers,
-                                     hasEnabledTV: row.hasTV,
-                                     softwareVolumeActive: row.software,
-                                     tvCanAdjustVolume: row.tvCanAdjust)
-            }
-            XCTAssertEqual(Set(routes).count, 1, row.name)
+            let route = VolumeKeyRoute.route(speakersCanHandleVolumeKeys: row.speakers,
+                                             hasEnabledTV: row.hasTV,
+                                             softwareVolumeActive: row.software,
+                                             tvCanAdjustVolume: row.tvCanAdjust)
+            XCTAssertEqual(route, row.expected, row.name)
         }
     }
 }

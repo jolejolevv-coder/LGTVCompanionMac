@@ -29,10 +29,9 @@ public enum VolumeKeyRoute: Equatable {
     /// 5. The TV. This includes an unknown TV answer (`tvCanAdjustVolume` is
     ///    nil), which keeps the old behavior of sending the keys to the TV.
     ///
-    /// `key` takes part in the signature, but today every key follows the
-    /// same route, mute included. Mute only differs inside the target.
-    static func route(for key: MediaKeyEvent,
-                      speakersCanHandleVolumeKeys: Bool,
+    /// Every key takes the same route, mute included, so mute can never reach
+    /// the TV while the speakers or the software volume own the volume.
+    static func route(speakersCanHandleVolumeKeys: Bool,
                       hasEnabledTV: Bool,
                       softwareVolumeActive: Bool,
                       tvCanAdjustVolume: Bool?) -> VolumeKeyRoute {

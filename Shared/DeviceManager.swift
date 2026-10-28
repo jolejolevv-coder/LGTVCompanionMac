@@ -692,8 +692,7 @@ public class DeviceManager: ObservableObject {
         // for every source and without digital loss. If the speakers were just
         // found unreachable, the route falls through to the next target.
         let device = devices.first(where: { $0.enabled })
-        let route = VolumeKeyRoute.route(for: key,
-                                         speakersCanHandleVolumeKeys: speakers.canHandleVolumeKeys,
+        let route = VolumeKeyRoute.route(speakersCanHandleVolumeKeys: speakers.canHandleVolumeKeys,
                                          hasEnabledTV: device != nil,
                                          softwareVolumeActive: softwareVolumeActive,
                                          tvCanAdjustVolume: tvCanAdjustVolume)
