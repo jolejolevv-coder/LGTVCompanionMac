@@ -1,7 +1,7 @@
 # Roadmap LGTV Companion
 
 ## Status 28.10.2026
-- Erledigt: 1.0 bis 1.2.0 (Pairing, Software Volume, Edifier Steuerung, EQ,
+- Erledigt: 1.0 bis 1.3.0 (Pairing, Software Volume, Edifier Steuerung, EQ,
   Nachtmodus, Stromsparen Schalter), Nachtmodus Fix auf `main`.
 - Freigegeben 28.10.2026, je Phase eine eigene Sitzung: BAMA Verbesserungen,
   `specs/features/bama-review-improvements.md`

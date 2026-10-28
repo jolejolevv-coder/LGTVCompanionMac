@@ -1,6 +1,6 @@
 # Architektur
 
-Stand 03.10.2026, Version 1.2.0. Dieses Dokument beschreibt, was im Repo
+Stand 28.10.2026, Version 1.3.0. Dieses Dokument beschreibt, was im Repo
 tatsächlich vorhanden ist. Wie man baut, steht in `BUILD.md`, wie man die App
 benutzt, in `USAGE.md`, die Begründung einzelner Features in `specs/features/`.
 

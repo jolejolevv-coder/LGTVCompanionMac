@@ -31,7 +31,7 @@
 - [x] Lokale Signatur, damit Freigaben Updates überleben
 - [x] Tests und Ausführung in der CI (125 Tests, Stand 28.10.2026)
 
-## ✅ Seit 1.2.0 (Stand 28.10.2026, BAMA Phase 1 und 2)
+## ✅ In 1.3.0 (28.10.2026, BAMA Phasen 1 bis 5)
 
 Stabilität (Phase 1):
 - [x] Gleichzeitige Befehle teilen sich einen connect und register (`TVSession`)

@@ -1,7 +1,7 @@
 # Übergabe LGTV Companion
 
 ## Stand 28.10.2026
-Version 1.2.0 ist released, auf `main` liegt zusätzlich der Nachtmodus Fix
+Version 1.3.0 ist released (28.10.2026, enthält BAMA Phasen 1 bis 5 und den Nachtmodus Fix). Früher: der Nachtmodus Fix
 (be83a43, nicht released). 93 Tests grün, CI grün, App installiert in
 /Applications. Am 28.10. wurde die App mit drei Reviews gegen das BAMA Skill
 Set (github.com/daveebbelaar/bama, Klon nur im Scratchpad, nicht installiert)

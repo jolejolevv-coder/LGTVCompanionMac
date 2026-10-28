@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="LGTV Companion"
 BUNDLE_ID="com.lgtvcompanion.mac"
-VERSION="1.2.0"
+VERSION="1.3.0"
 # Unique per build (UTC, minute resolution); the user-facing version stays VERSION.
 BUILD_NUMBER="$(date -u +%Y%m%d%H%M)"
 BUILD_DIR="build"
