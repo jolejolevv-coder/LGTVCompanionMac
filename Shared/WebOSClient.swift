@@ -331,16 +331,7 @@ public class WebOSClient: ObservableObject, TVTransport {
                 // Build the message on `queue`: reading device.pairingKey here
                 // (rather than off-queue) keeps all access to `device` on the
                 // one serial queue, where handleReceivedData also writes it.
-                let pairingMessage: [String: Any] = [
-                    "type": "register",
-                    "id": "register_0",
-                    "payload": [
-                        "forcePairing": false,
-                        "pairingType": "PROMPT",
-                        "client-key": self.device.pairingKey ?? "",
-                        "manifest": Self.manifest
-                    ]
-                ]
+                let pairingMessage = Self.registerMessage(clientKey: self.device.pairingKey)
 
                 self.pairingContinuation = continuation
                 self.pairingAttemptID &+= 1
@@ -495,7 +486,7 @@ public class WebOSClient: ObservableObject, TVTransport {
 
     // MARK: - Private Helpers
 
-    private static let manifest: [String: Any] = [
+    static let manifest: [String: Any] = [
         "manifestVersion": 1,
         "appVersion": "1.0",
         "signed": [
@@ -534,17 +525,36 @@ public class WebOSClient: ObservableObject, TVTransport {
         ]
     ]
 
-    private func request(uri: String, payload: [String: Any]? = nil) async throws -> [String: Any] {
-        var message: [String: Any] = ["type": "request", "uri": uri]
+    /// The register message. Built here, without side effects, so a test can
+    /// compare it with what the TV expects.
+    static func registerMessage(clientKey: String?) -> [String: Any] {
+        [
+            "type": "register",
+            "id": "register_0",
+            "payload": [
+                "forcePairing": false,
+                "pairingType": "PROMPT",
+                "client-key": clientKey ?? "",
+                "manifest": manifest
+            ]
+        ]
+    }
+
+    /// A command message for one `ssap://` URI. `payload` is left out when nil.
+    static func requestMessage(uri: String, payload: [String: Any]?, id: String) -> [String: Any] {
+        var message: [String: Any] = ["type": "request", "uri": uri, "id": id]
         if let payload = payload {
             message["payload"] = payload
         }
+        return message
+    }
 
+    private func request(uri: String, payload: [String: Any]? = nil) async throws -> [String: Any] {
         return try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 let id = "request_\(self.messageId)"
                 self.messageId += 1
-                message["id"] = id
+                let message = Self.requestMessage(uri: uri, payload: payload, id: id)
 
                 // Store continuation BEFORE sending — the response can arrive
                 // before the send completion fires.
