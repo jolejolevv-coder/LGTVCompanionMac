@@ -87,7 +87,8 @@ reduzieren" hat das HUD einen festen Hintergrund.
 
 ## CI nach Phase 5 (28.10.2026)
 CI war rot: Xcode 16.4 hat Swift 6.1, `isolated deinit` braucht 6.2. Workflow
-auf `macos-26` mit neuestem Xcode 26 umgestellt. Bleibt sie rot: Fehler mit
+auf `macos-26` mit neuestem Xcode 26 umgestellt, CI seitdem grün
+(Run 40671616427). Falls sie wieder rot wird: Fehler mit
 `gh run view <id> --log-failed | grep error:` lesen; Kandidat ist der Fehler
 "non-sendable result type T" in `Shared/DeviceManager.swift` runOnConnectedClient
 (Fix: `T: Sendable`). Phasen 3 und 4 waren in der CI schon rot (macos-15,
