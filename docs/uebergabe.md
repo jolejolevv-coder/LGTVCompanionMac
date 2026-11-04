@@ -1,5 +1,18 @@
 # Übergabe LGTV Companion
 
+## Stand 04.11.2026: PS5 Fix (Auto Aus nur mit Mac am TV)
+Gemeldet: Kabel vom Mac ab, PS5 läuft, nach 5 Minuten Idle schaltet die App
+den Bildschirm aus. Fix nach `specs/features/auto-off-only-when-mac-on-tv.md`:
+`Shared/AutoOffPolicy.swift` (reine Entscheidung), `Shared/LGDisplayDetector.swift`
+(LG Hersteller 0x1E6D oder Name "LG TV" unter den Online Displays),
+`DeviceManager.devicesAllowedToAutoOff` filtert jeden automatischen Aus Pfad.
+144 Tests grün, 0 Warnungen, auf main, installiert (Version bleibt 1.3.0,
+neue Buildnummer). Vom Nutzer zu prüfen: PS5 mit gezogenem Kabel länger als
+5 Minuten bleibt an; Mac am TV ohne Bedienung geht nach 5 Minuten aus;
+Mac schlafen legen mit Mac am TV schaltet weiter aus. Log dazu:
+`log stream --predicate 'subsystem == "com.lgtvcompanion.mac" AND category == "tv"'`
+zeigt "Auto off check".
+
 ## Stand 28.10.2026
 Version 1.3.0 ist released (28.10.2026, enthält BAMA Phasen 1 bis 5 und den Nachtmodus Fix). Früher: der Nachtmodus Fix
 (be83a43, nicht released). 93 Tests grün, CI grün, App installiert in

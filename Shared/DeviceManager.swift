@@ -496,9 +496,9 @@ public class DeviceManager: ObservableObject {
     ///   screen-off setting (right choice when the Mac shuts down —
     ///   otherwise the TV would stay on behind a dark screen).
     public func powerOffManagedDevices(fullOff: Bool = false) async {
-        // Skip TVs currently showing a non-Mac input (e.g. a console).
-        let managed = managedDevices
-        let targets = await devicesShowingMacInput(managed)
+        // Skip everything when the Mac is not on the TV, and TVs showing a
+        // non-Mac input (e.g. a console).
+        let targets = await devicesAllowedToAutoOff(managedDevices)
         await withTaskGroup(of: Void.self) { group in
             for device in targets {
                 group.addTask {
@@ -547,6 +547,9 @@ public class DeviceManager: ObservableObject {
 
     // MARK: - Event Handlers
 
+    /// Whether the Mac outputs to an LG TV right now. A seam for tests.
+    var macDrivesLGTVDisplay: @MainActor () -> Bool = { LGDisplayDetector.macDrivesLGTV() }
+
     private var managedDevices: [WebOSDevice] {
         devices.filter { $0.autoManage && $0.enabled }
     }
@@ -575,11 +578,11 @@ public class DeviceManager: ObservableObject {
     }
 
     /// All devices concurrently — one slow TV must not delay the others
-    /// (especially while the system is waiting to sleep). Devices whose TV is
-    /// currently showing a non-Mac input (e.g. a console on another HDMI port)
-    /// are skipped, so automatic power-off never interrupts them.
+    /// (especially while the system is waiting to sleep). Only devices that
+    /// `AutoOffPolicy` allows are turned off, so automatic power-off never
+    /// interrupts a console while the Mac is not on the TV.
     private func powerOffAll(_ targets: [WebOSDevice]) async {
-        let eligible = await devicesShowingMacInput(targets)
+        let eligible = await devicesAllowedToAutoOff(targets)
         await withTaskGroup(of: Void.self) { group in
             for device in eligible {
                 group.addTask { _ = try? await self.powerOffDevice(device) }
@@ -587,30 +590,32 @@ public class DeviceManager: ObservableObject {
         }
     }
 
-    /// Keeps only devices whose TV is currently showing the Mac's input.
-    private func devicesShowingMacInput(_ targets: [WebOSDevice]) async -> [WebOSDevice] {
-        await withTaskGroup(of: (WebOSDevice, Bool).self) { group in
+    /// Keeps only devices `AutoOffPolicy` allows to turn off. When the Mac
+    /// does not output to an LG TV, no TV is asked at all. Internal for tests.
+    func devicesAllowedToAutoOff(_ targets: [WebOSDevice]) async -> [WebOSDevice] {
+        let macDrivesLGTV = macDrivesLGTVDisplay()
+        guard macDrivesLGTV else { return [] }
+        return await withTaskGroup(of: (WebOSDevice, TVInputState).self) { group in
             for device in targets {
-                group.addTask { (device, await self.tvShowsMacInput(device)) }
+                group.addTask { (device, await self.inputState(of: device)) }
             }
             var result: [WebOSDevice] = []
-            for await (device, shows) in group where shows {
+            for await (device, input) in group
+            where AutoOffPolicy.mayPowerOff(macDrivesLGTV: macDrivesLGTV, input: input) {
                 result.append(device)
             }
             return result
         }
     }
 
-    /// Whether the TV currently shows the Mac's input. Returns true (i.e. allow
-    /// power-off) when no Mac input is configured or the input can't be read —
-    /// a flaky query must never permanently disable the core power-off.
-    private func tvShowsMacInput(_ device: WebOSDevice) async -> Bool {
-        guard let macInput = device.macInputAppId else { return true }
+    /// What the TV shows compared with the Mac's configured input.
+    private func inputState(of device: WebOSDevice) async -> TVInputState {
+        guard let macInput = device.macInputAppId else { return .notConfigured }
         guard let currentApp = try? await withConnectedClient(
                   for: device, reportsFailure: false, { try await $0.getForegroundAppInfo() }) else {
-            return true
+            return .unknown
         }
-        return currentApp == macInput
+        return currentApp == macInput ? .mac : .other
     }
 
     private func powerOnAll(_ targets: [WebOSDevice]) async {
@@ -628,7 +633,8 @@ public class DeviceManager: ObservableObject {
         let targets = managedDevices
 
         Task {
-            // If no displays are connected, turn off TVs
+            // No display left: powerOffAll finds no LG TV and turns nothing
+            // off, because the TV is gone or belongs to another source now.
             if displayCount == 0 {
                 await self.powerOffAll(targets)
             }

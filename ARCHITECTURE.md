@@ -51,6 +51,8 @@ und `LGTVCompanionApp` (SwiftUI). Externe Abhängigkeiten gibt es keine.
 | `SpeakerSound.swift` | Klangwahl, EQ Kurven (Techno, Hip-Hop), Zeitplan des Nachtmodus |
 | `SpeakerAutomation.swift` | My EQ, Nachtmodus, Eingang beim Aufwachen |
 | `DisplayControl.swift` | Auflösung und Skalierung der Displays |
+| `AutoOffPolicy.swift` | Reine Entscheidung, ob ein automatisches Aus den TV ausschalten darf |
+| `LGDisplayDetector.swift` | Ob der Mac gerade auf ein LG TV ausgibt (Hersteller LG im EDID oder Name mit "LG TV") |
 | `Log.swift` | `os.Logger` je Bereich (tv, speakers, audio, app), Subsystem `com.lgtvcompanion.mac` |
 
 ### App
@@ -110,9 +112,15 @@ eigenes Overlay einblendet.
 | Mac wacht auf, Aktivität | TV an, erst per Befehl, sonst per Wake on LAN |
 | Herunterfahren, Neustart | TV ganz aus |
 
-Vor dem Ausschalten prüft die App zwei Ausnahmen: Zeigt der TV einen anderen
-Eingang als den des Mac, bleibt er an. Hält eine freigegebene App den
-Bildschirm wach (Video), gilt der Mac nicht als im Leerlauf.
+Vor jedem automatischen Aus entscheidet `AutoOffPolicy`. Steuert der Mac
+kein LG TV als Display an (Kabel ab, Mac am anderen Monitor), bleibt jeder TV
+an und wird gar nicht erst gefragt. Grund: Die PS5 kann am selben HDMI Port
+hängen, dann hilft der Eingangsvergleich nicht. Gezählt werden die Online
+Displays (`CGGetOnlineDisplayList`), damit ein gerade einschlafendes Display
+noch zählt. Steuert der Mac ein LG TV an, bleibt ein TV mit anderem Eingang
+an; ist der Eingang nicht lesbar oder nicht eingestellt, geht er aus. Hält
+eine freigegebene App den Bildschirm wach (Video), gilt der Mac nicht als im
+Leerlauf. Manuelles Aus aus dem Menü fragt die Regel nicht.
 
 Der Ruhezustand wird so lange verzögert, bis der Befehl beim TV angekommen ist,
 höchstens 20 Sekunden.
