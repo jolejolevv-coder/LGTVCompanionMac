@@ -50,6 +50,15 @@
    mussten mit.
 3. Besser spezifizieren: Mindestversion der Toolchain vorab in der Spec nennen.
 
+## Fix 04.11.2026: Auto Aus nur mit Mac am TV
+Spec `specs/features/auto-off-only-when-mac-on-tv.md`, fertig, installiert.
+1. Gut: Ursache direkt aus den gespeicherten Einstellungen ablesbar, die
+   Entscheidung ist eine reine Funktion mit Tabellentest.
+2. Falsche Annahmen: Der Eingangsvergleich galt als Schutz für Konsolen, er
+   greift aber nicht, wenn die PS5 am selben HDMI Port hängt.
+3. Besser spezifizieren: Bei Automatik immer festhalten, wem der TV gerade
+   "gehört", nicht nur welcher Eingang aktiv ist.
+
 ## Nächstes
-BAMA Plan ist durch. Offen: Klicktests der Phasen 3 und 4, Nachttest Sleep
-und Wake mit Swift 6, danach Release 1.3.0 auf Wunsch des Nutzers.
+BAMA Plan ist durch, 1.3.0 released. Offen: Klicktests der Phasen 3 und 4,
+Nachttest Sleep und Wake mit Swift 6, Praxistest des PS5 Fix.
