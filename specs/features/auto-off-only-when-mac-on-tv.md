@@ -38,7 +38,7 @@ Eingang nicht lesbar ist, weil sie dann absichtlich trotzdem ausschaltet.
       oder Name mit "LG TV"), Ergebnis wird geloggt (`Log.tv`).
 - [x] Der Pfad "kein Display mehr angeschlossen, TV aus" schaltet nicht mehr
       aus, weil der Mac dann kein LG TV ansteuert (Code).
-- [ ] 138 Tests plus neue grün, CI grün, installiert.
+- [x] 138 Tests plus neue grün (144), CI grün, installiert (Build 202611040947).
 
 ## Implementation plan
 Phase 1: `Shared/AutoOffPolicy.swift` mit der reinen Entscheidung plus Test.
