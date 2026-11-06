@@ -1,6 +1,7 @@
 # Roadmap LGTV Companion
 
-## Status 28.10.2026
+## Status 06.11.2026
+Stand: 06.11.2026
 - Erledigt: 1.0 bis 1.3.0 (Pairing, Software Volume, Edifier Steuerung, EQ,
   Nachtmodus, Stromsparen Schalter), Nachtmodus Fix auf `main`.
 - Freigegeben 28.10.2026, je Phase eine eigene Sitzung: BAMA Verbesserungen,
@@ -10,7 +11,7 @@
   - Phase 3 Bedienung nach Apple Regeln: fertig 28.10.2026 (132 Tests), Klicktest offen
   - Phase 4 Tastatur und VoiceOver: fertig 28.10.2026, Klicktest offen
   - Phase 5 Swift 6: fertig 28.10.2026 (merge a1128a9, 138 Tests, 0 Warnungen), Nachttest offen
-- Danach optional Release 1.3.0.
+- Release 1.3.0 getaggt am 28.10.2026 (c332084), enthält Phasen 1 bis 5.
 
 ## Retrospektive Phase 1 (BAMA)
 1. Gut: Reviews gegen ein festes Regelwerk lieferten konkrete Fundstellen,
@@ -60,5 +61,5 @@ Spec `specs/features/auto-off-only-when-mac-on-tv.md`, fertig, installiert.
    "gehört", nicht nur welcher Eingang aktiv ist.
 
 ## Nächstes
-BAMA Plan ist durch, 1.3.0 released. Offen: Klicktests der Phasen 3 und 4,
+BAMA Plan ist durch, 1.3.0 released (Tag v1.3.0), main nach dem PS5 Fix auf 023753c. Offen: Klicktests der Phasen 3 und 4,
 Nachttest Sleep und Wake mit Swift 6, Praxistest des PS5 Fix.
